@@ -36,7 +36,8 @@ def ackattack(host):
         for snd,rcv in ans:
 		#print rcv.summary()
                 endpoint = isinstance(rcv.payload, TCP)
-                retdata += "%s %s %s\n" % (snd.ttl,rcv.src,endpoint)
+                #retdata += "%s %s %s\n" % (snd.ttl,rcv.src,endpoint)
+		retdata += "%s\n" % (rcv.src)
                 iplist.append(rcv.src)
 
 		if endpoint:
