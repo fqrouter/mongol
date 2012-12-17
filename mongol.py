@@ -127,6 +127,10 @@ for host in hostnames:
  	        except socket.timeout:
          	       	print "connection to " + host + " has timedout moving on"
 			continue
+		except socket.error:
+			print "connection to " + host + " has timedout moving on"
+                        continue
+
 		s.send(MESSAGE % ("/tibetalk", host) )
 
 		# possibly a delay from the IDS to reaction time
