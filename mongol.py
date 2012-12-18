@@ -122,6 +122,8 @@ for host in hostnames:
                 # tibetalk
 		print "Sending stimulus"				
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		s.settimeout(5)
+
 		try:
  	               s.connect((ipaddr, port))
  	        except socket.timeout:
