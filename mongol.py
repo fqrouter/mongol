@@ -16,7 +16,8 @@ outputfile = "output.txt"
 
 
 def usage():
-	print "Mongol.py -- a tool for pin pointing the ip addresses\n\t of the great firewall of china keyword blocking devices"
+	print "Mongol.py:  A tool for pin pointing the ip addresses of the great firewall"
+	print "            of China, keyword filtering devcies/mirror routers"
 	print ""
 	print "usage (as root): python mongol.py -i hostslist.txt -o outputfilename.txt [-k KEYWORD]"
 	print "\t-i hostlist.txt: required newline seperated list of hosts to scan"
