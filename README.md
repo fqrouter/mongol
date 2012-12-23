@@ -14,11 +14,11 @@ It is built using scapy[1] for some of the TCP header modification requirements
 
 ##Usage
 
-sudo python mongol.py -i hostslist.txt -o outputfilename.txt
-
-	hostslist.txt --- The input file is a newline seperated list of ip's and domain names of websites hosted within china.
-
-	outputfilename.txt --- The output file will be location where ip addresses of found filtering devices will be printed.
+sudo python mongol.py -i hostslist.txt -o outputfilename.txt [-k KEYWORD]
+	-i hostlist.txt: required newline seperated list of hosts to scan
+	-o outputfile.txt: File to write data out too
+	-h: Show this message
+	-k KEYWORD: Overwrite the default keyword of 'tibet@lk'
 
 ##How it works
 

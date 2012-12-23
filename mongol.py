@@ -18,15 +18,19 @@ outputfile = "output.txt"
 def usage():
 	print "Mongol.py -- a tool for pin pointing the ip addresses\n\t of the great firewall of china keyword blocking devices"
 	print ""
-	print "usage: python mongol.py -i hostslist.txt -o outputfilename.txt"
-	print "-i: required newline seperated list of hosts to scan"
+	print "usage (as root): python mongol.py -i hostslist.txt -o outputfilename.txt [-k KEYWORD]"
+	print "\t-i hostlist.txt: required newline seperated list of hosts to scan"
+	print "\t-o outputfile.txt: File to write data out too"
+	print "\t-h: Show this message"	
+	print "\t-k KEYWORD: Overwrite the default keyword of 'tibet@lk'"
 
 # Basically a slightly modified traceroute
 def ackattack(host):
         port = RandNum(1024,65535)
 
 	# build a simple ACK packet, using a range (1,255) for the ttl creates 255 packets
-        ack = IP(dst=host, ttl=(1,255))/TCP(sport=port, dport=80, flags="A")
+	# TODO: fix so that it can be operated behind a NAT, attempted with seq=0 and ack=0
+        ack = IP(dst=host, ttl=(1,255))/TCP(sport=port, dport=80, flags="A", seq=0, ack=0)
         
 	# send packets and collect answers
 	ans,unans = sr(ack, timeout=4, verbose=1)
@@ -48,7 +52,7 @@ def ackattack(host):
 
 # parse arguments
 try:
-	opts, args = getopt.getopt(sys.argv[1:],"hi:o:")
+	opts, args = getopt.getopt(sys.argv[1:],"hi:o:k:")
 except getopt.GetoptError:
 	usage()
 	sys.exit(1)
@@ -60,8 +64,10 @@ for opt, arg in opts:
 		inputfile = arg
 	elif opt == "-o":
 		outputfile = arg
+	elif opt == "-k":
+		Keyword = arg
 
-# read the hostnames in from the intputfile
+# read the hostnames in from the inputfile
 if not inputfile:
 	usage()
 	print "ERROR: Please select an input file of hostnames, one hostname per line"
@@ -120,7 +126,6 @@ for host in hostnames:
 		noFWprint, noFWlist = ackattack(ipaddr)
 
 		# http://en.wikipedia.org/wiki/List_of_blacklisted_keywords_in_the_People%27s_Republic_of_China
-                # tibetalk
 		print "Sending stimulus"				
 		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		s.settimeout(5)
@@ -134,7 +139,7 @@ for host in hostnames:
 			print "connection to " + host + " has timedout moving on"
                         continue
 
-		s.send(MESSAGE % ("/tibetalk", host) )
+		s.send(MESSAGE % ("/"+Keyword, host) )
 
 		# possibly a delay from the IDS to reaction time
 		time.sleep(3)
