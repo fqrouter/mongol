@@ -13,6 +13,7 @@ MESSAGE = "GET %s HTTP/1.1" + "\x0d\x0a" + "Host: %s" + "\x0d\x0a\x0d\x0a"
 port = 80
 inputfile = ""
 outputfile = "output.txt"
+Keyword = "tibetalk"
 
 
 def usage():

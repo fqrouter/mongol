@@ -15,6 +15,7 @@ It is built using scapy[1] for some of the TCP header modification requirements
 ##Usage
 
 sudo python mongol.py -i hostslist.txt -o outputfilename.txt [-k KEYWORD]
+
 	-i hostlist.txt: required newline seperated list of hosts to scan
 	-o outputfile.txt: File to write data out too
 	-h: Show this message
