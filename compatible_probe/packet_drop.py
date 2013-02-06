@@ -37,7 +37,7 @@ ERROR_NO_DATA = 11
 PROBE_DST = None # set via command line
 PROBE_DPORT = 80
 
-icmp_dump_socket = sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
+icmp_dump_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
 icmp_dump_socket.settimeout(0)
 
 def main(dst, blocked_sport, tcp_or_udp='tcp',

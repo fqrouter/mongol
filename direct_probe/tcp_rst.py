@@ -6,6 +6,33 @@ import random
 import dpkt.ip
 import dpkt.icmp
 
+# Probe using the fact GFW will send back TCP RST if keyword detected in HTTP GET URL or HOST
+#
+# Send SYN with TTL 1
+# PROBE =SYN=> ROUTER-1 (TTL is 1)
+# PROBE <=ICMP_TTL_EXCEEDED= ROUTER-1
+# Router will send back a ICMP packet tell us its (the router) ip address
+#
+# Send offending payload after SYN (A.K.A GET facebook.com) with TTL 1
+# PROBE =OFFENDING_PAYLOAD=> ROUTER-1 (TTL is 1)
+# PROBE <=ICMP_TTL_EXCEEDED= ROUTER-1
+# Router will send back a ICMP packet tell us its (the router) ip address
+#
+# Send SYN with big enough TTL
+# PROBE =OFFENDING_PAYLOAD => ROUTER-1 .. => ROUTER ATTACHED GFW (TTL is N)
+# PROBE <=ICMP_TTL_EXCEEDED= ROUTER-1 .. <= ROUTER ATTACHED GFW
+# SYN just by itself does not trigger GFW
+#
+# Send offending payload after SYN (A.K.A GET facebook.com) with big enough TTL
+# PROBE =OFFENDING_PAYLOAD => ROUTER-1 .. => ROUTER ATTACHED GFW (TTL is N)
+# PROBE <=ICMP_TTL_EXCEEDED= ROUTER-1 .. <= ROUTER ATTACHED GFW
+# PROBE <=RST= ROUTER-1 .. <=ROUTER ATTACHED GFW (RST was sent by GFW to jam the connection)
+# SYN by itself does not trigger GFW. Offending payload by itself does not trigger GFW as well.
+# Only if SYN follows the ACK in a short time, and keyword in the HTTP GET URL or HOST will trigger.
+# SYN+ACK will not be sent back in this case, as SYN never reaches the destination.
+# The RST sent back from GFW will have TTL different from other packets sent back from destination.
+# So by checking TTL of returning packets we can tell if GFW is jamming the connection.
+# Also based on the ICMP packet we can tell the ip address of router attached GFW.
 
 def find_probe_src():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

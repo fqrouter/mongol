@@ -2,6 +2,7 @@
 import socket
 import dpkt.ip
 import dpkt.dns
+import dpkt.udp
 import sys
 import time
 
@@ -55,20 +56,33 @@ WRONG_ANSWERS = {
     '216.221.188.182',
     '216.234.179.13'
 }
+
+def find_probe_src():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(('123.125.114.144', 80))
+        return s.getsockname()[0]
+    finally:
+        s.close()
+
 ERROR_NO_DATA = 11
 PROBE_DST = None # set via command line
 PROBE_DPORT = 53 # GFW only jam DNS at port 53
+PROBE_SRC = find_probe_src()
+PROBE_SPORT = None # set via command line
 
-udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-udp_socket.settimeout(0)
+raw_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
+raw_socket.setsockopt(socket.SOL_IP, socket.IP_HDRINCL, 1)
 icmp_dump_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
 icmp_dump_socket.settimeout(0)
-OFFENDING_PAYLOAD = str(dpkt.dns.DNS(qd=[dpkt.dns.DNS.Q(name='twitter.com')]))
+udp_dump_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
+udp_dump_socket.settimeout(0)
 
-def main(dst, start_ttl=4, end_ttl=14, sport=0):
+def main(dst, start_ttl=4, end_ttl=14, sport=19840):
     global PROBE_DST
+    global PROBE_SPORT
     PROBE_DST = dst
-    udp_socket.bind(('', int(sport))) # if sport change the route going through might change
+    PROBE_SPORT = int(sport)
     for ttl in range(int(start_ttl), int(end_ttl) + 1):
         send_offending_payload(ttl)
         time.sleep(1)
@@ -83,8 +97,17 @@ def main(dst, start_ttl=4, end_ttl=14, sport=0):
 
 
 def send_offending_payload(ttl):
-    udp_socket.setsockopt(socket.SOL_IP, socket.IP_TTL, ttl)
-    udp_socket.sendto(OFFENDING_PAYLOAD, (PROBE_DST, PROBE_DPORT))
+    udp_packet = dpkt.udp.UDP(
+        sport=PROBE_SPORT, dport=PROBE_DPORT,
+        data=dpkt.dns.DNS(qd=[dpkt.dns.DNS.Q(name='twitter.com')])
+    )
+    udp_packet.ulen = len(udp_packet)
+    OFFENDING_PAYLOAD = dpkt.ip.IP(
+        p=dpkt.ip.IP_PROTO_UDP, src=socket.inet_aton(PROBE_SRC), dst=socket.inet_aton(PROBE_DST),
+        id=ttl * 10 + 1, ttl=ttl,
+        data=udp_packet
+    )
+    raw_socket.sendto(str(OFFENDING_PAYLOAD), (PROBE_DST, PROBE_DPORT))
 
 
 def dump_icmp_to_get_this_hop_router_ip():
@@ -107,13 +130,15 @@ def dump_icmp_to_get_this_hop_router_ip():
 def dump_udp_to_find_out_fake_answer_sent_by_gfw():
     try:
         while True:
-            dns_packet = dpkt.dns.DNS(udp_socket.recv(1024))
-            if dns_packet.an:
-                answer = socket.inet_ntoa(dns_packet.an[0].rdata)
-                if answer in WRONG_ANSWERS:
-                    return answer
-            else:
-                return '[BLANK]'
+            ip_packet = dpkt.ip.IP(udp_dump_socket.recv(1024))
+            if PROBE_DST == socket.inet_ntoa(ip_packet.src) and PROBE_DPORT == ip_packet.udp.sport:
+                dns_packet = dpkt.dns.DNS(str(ip_packet.udp.data))
+                if dns_packet.an:
+                    answer = socket.inet_ntoa(dns_packet.an[0].rdata)
+                    if answer in WRONG_ANSWERS:
+                        return answer
+                else:
+                    return '[BLANK]'
     except socket.error as e:
         if ERROR_NO_DATA == e[0]:
             pass # all packets dumped, move on
