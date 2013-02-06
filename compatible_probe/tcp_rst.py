@@ -35,26 +35,29 @@ import dpkt.icmp
 # Also based on the ICMP packet we can tell the ip address of router attached GFW.
 
 ERROR_NO_DATA = 11
-PROBE_SPORT = 19840 + random.randint(1, 1000)
-PROBE_DST = None
-PROBE_DPORT = None
 OFFENDING_PAYLOAD = 'GET / HTTP/1.1\r\nHost: www.facebook.com\r\n\r\n'
+
+PROBE_DST = None # set via command line
+PROBE_DPORT = None # set via command line
+PROBE_SPORT = None # set via command line
 
 icmp_dump_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
 icmp_dump_socket.settimeout(0)
 tcp_dump_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
 tcp_dump_socket.settimeout(0)
 
-def main(dst, dport=80, start_ttl=1, end_ttl=14):
+def main(dst, dport=80, start_ttl=1, end_ttl=14, sport=19840 + random.randint(1, 1000)):
     global PROBE_DST
     global PROBE_DPORT
+    global PROBE_SPORT
     PROBE_DST = dst
     PROBE_DPORT = int(dport)
+    PROBE_SPORT = int(sport)
     for ttl in range(int(start_ttl), int(end_ttl) + 1):
         connect_and_send_offending_payload(ttl)
         time.sleep(1)
         router_ip = dump_icmp_to_get_this_hop_router_ip()
-        print('via[%s]: %s' % (ttl, router_ip))
+        print('[%s] via: %s' % (ttl, router_ip or '*'))
         found = dump_tcp_to_find_out_if_gfw_is_jamming()
         if found:
             if ttl < 3:
@@ -64,6 +67,26 @@ def main(dst, dport=80, start_ttl=1, end_ttl=14):
             sys.exit(0)
     print('router attached GFW not found')
     sys.exit(1)
+
+
+def connect_and_send_offending_payload(ttl):
+    tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        tcp_socket.settimeout(5)
+        tcp_socket.bind(('', PROBE_SPORT)) # if sport change the route going through might change
+        tcp_socket.connect((PROBE_DST, PROBE_DPORT))
+        tcp_socket.setsockopt(socket.SOL_IP, socket.IP_TTL, ttl)
+        tcp_socket.send(OFFENDING_PAYLOAD)
+    finally:
+        immediately_close_tcp_socket_so_sport_maybe_reused(tcp_socket)
+
+
+def immediately_close_tcp_socket_so_sport_maybe_reused(tcp_socket):
+    l_onoff = 1
+    l_linger = 0
+    tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', l_onoff, l_linger))
+    tcp_socket.close()
 
 
 def dump_icmp_to_get_this_hop_router_ip():
@@ -100,27 +123,8 @@ def dump_tcp_to_find_out_if_gfw_is_jamming():
     return False
 
 
-def connect_and_send_offending_payload(ttl):
-    tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        tcp_socket.settimeout(5)
-        tcp_socket.bind(('', PROBE_SPORT))
-        tcp_socket.connect((PROBE_DST, PROBE_DPORT))
-        tcp_socket.setsockopt(socket.SOL_IP, socket.IP_TTL, ttl)
-        tcp_socket.send(OFFENDING_PAYLOAD)
-    finally:
-        immediately_close_tcp_socket_so_sport_maybe_reused(tcp_socket)
-
-
-def immediately_close_tcp_socket_so_sport_maybe_reused(tcp_socket):
-    l_onoff = 1
-    l_linger = 0
-    tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', l_onoff, l_linger))
-    tcp_socket.close()
-
 if 1 == len(sys.argv):
-    print('[Usage] ./tcp_rst.py destination_ip [destination_port] [start_ttl] [end_ttl]')
+    print('[Usage] ./tcp_rst.py destination_ip [destination_port] [start_ttl] [end_ttl] [probe_source_port]')
     sys.exit(3)
 else:
     main(*sys.argv[1:])
