@@ -79,10 +79,10 @@ def connect_and_send_offending_payload(ttl):
         tcp_socket.setsockopt(socket.SOL_IP, socket.IP_TTL, ttl)
         tcp_socket.send(OFFENDING_PAYLOAD)
     finally:
-        immediately_close_tcp_socket_so_sport_maybe_reused(tcp_socket)
+        immediately_close_tcp_socket_so_sport_can_be_reused(tcp_socket)
 
 
-def immediately_close_tcp_socket_so_sport_maybe_reused(tcp_socket):
+def immediately_close_tcp_socket_so_sport_can_be_reused(tcp_socket):
     l_onoff = 1
     l_linger = 0
     tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', l_onoff, l_linger))
