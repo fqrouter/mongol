@@ -65,7 +65,7 @@ icmp_dump_socket = sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.
 icmp_dump_socket.settimeout(0)
 OFFENDING_PAYLOAD = str(dpkt.dns.DNS(qd=[dpkt.dns.DNS.Q(name='twitter.com')]))
 
-def main(dst, start_ttl=1, end_ttl=14, sport=0):
+def main(dst, start_ttl=4, end_ttl=14, sport=0):
     global PROBE_DST
     PROBE_DST = dst
     udp_socket.bind(('', int(sport))) # if sport change the route going through might change

@@ -40,17 +40,25 @@ PROBE_DPORT = 80
 icmp_dump_socket = sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
 icmp_dump_socket.settimeout(0)
 
-def main(dst, blocked_sport, reference_sport=19840 + random.randint(1, 1000)):
+def main(dst, blocked_sport, tcp_or_udp='tcp',
+         reference_sport=19840 + random.randint(1, 1000),
+         start_ttl=4, end_ttl=14):
     global PROBE_DST
     PROBE_DST = dst
     blocked_sport = int(blocked_sport)
     reference_sport = int(reference_sport)
     last_seen_router_ip = None
     count_of_packet_loss_in_a_row = 0
-    for ttl in range(1, 20):
-        send_syn(blocked_sport, ttl)
-        send_syn(reference_sport, ttl)
-        send_syn(blocked_sport, ttl) # send syn twice to ensure the packet loss was not a accident
+    for ttl in range(int(start_ttl), int(end_ttl) + 1):
+        if 'tcp' == tcp_or_udp:
+            send_tcp_packet(blocked_sport, ttl)
+            send_tcp_packet(reference_sport, ttl)
+            send_tcp_packet(blocked_sport, ttl) # send syn twice to ensure the packet loss was not a accident
+        else:
+            assert 'udp' == tcp_or_udp
+            send_udp_packet(blocked_sport, ttl)
+            send_udp_packet(reference_sport, ttl)
+            send_udp_packet(blocked_sport, ttl) # send syn twice to ensure the packet loss was not a accident
         time.sleep(2)
         routers_ip = dump_icmp_to_get_this_hop_routers_ip()
         print('[%2s] via: %15s %15s' %
@@ -67,7 +75,7 @@ def main(dst, blocked_sport, reference_sport=19840 + random.randint(1, 1000)):
     sys.exit(1)
 
 
-def send_syn(sport, ttl):
+def send_tcp_packet(sport, ttl):
     tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP)
     try:
         tcp_socket.settimeout(0)
@@ -86,6 +94,17 @@ def immediately_close_tcp_socket_so_sport_can_be_reused(tcp_socket):
     l_linger = 0
     tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', l_onoff, l_linger))
     tcp_socket.close()
+
+
+def send_udp_packet(sport, ttl):
+    udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    try:
+        udp_socket.settimeout(0)
+        udp_socket.bind(('', sport))
+        udp_socket.setsockopt(socket.SOL_IP, socket.IP_TTL, ttl)
+        udp_socket.sendto('blahblahblah', (PROBE_DST, PROBE_DPORT))
+    finally:
+        udp_socket.close()
 
 
 def dump_icmp_to_get_this_hop_routers_ip():

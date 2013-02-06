@@ -46,7 +46,7 @@ icmp_dump_socket.settimeout(0)
 tcp_dump_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
 tcp_dump_socket.settimeout(0)
 
-def main(dst, dport=80, start_ttl=1, end_ttl=14, sport=19840 + random.randint(1, 1000)):
+def main(dst, dport=80, start_ttl=4, end_ttl=14, sport=19840 + random.randint(1, 1000)):
     global PROBE_DST
     global PROBE_DPORT
     global PROBE_SPORT
@@ -60,7 +60,7 @@ def main(dst, dport=80, start_ttl=1, end_ttl=14, sport=19840 + random.randint(1,
         print('[%s] via: %s' % (ttl, router_ip or '*'))
         found = dump_tcp_to_find_out_if_gfw_is_jamming()
         if found:
-            if ttl < 3:
+            if ttl == start_ttl:
                 print('GFW is in unconditional mode for the destination, try another destination')
                 sys.exit(2)
             print('found router attached GFW: %s' % router_ip)
