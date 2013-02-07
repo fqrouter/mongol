@@ -5,6 +5,7 @@ import time
 import random
 import dpkt.ip
 import dpkt.icmp
+import dpkt.tcp
 
 # Probe using the fact GFW will send back TCP RST if keyword detected in HTTP GET URL or HOST
 #
@@ -120,20 +121,22 @@ def dump_icmp_to_get_this_hop_router_ip():
 
 
 def dump_tcp_to_find_out_if_gfw_is_jamming():
-    ttl_observed = set()
+# There should be no packet sent back as SYN did not reach destination
+# If there is packet sent back, it is very likely sent back by GFW
+    found = False
     try:
         while True:
-            tcp_packet = dpkt.ip.IP(tcp_dump_socket.recv(1024))
-            if PROBE_DST == socket.inet_ntoa(tcp_packet.src) and PROBE_DPORT == tcp_packet.tcp.sport:
-                ttl_observed.add(tcp_packet.ttl)
+            ip_packet = dpkt.ip.IP(tcp_dump_socket.recv(1024))
+            if PROBE_DST == socket.inet_ntoa(ip_packet.src) and \
+               PROBE_DPORT == ip_packet.tcp.sport and \
+               dpkt.tcp.TH_RST & ip_packet.tcp.flags:
+                found = True
     except socket.error as e:
         if ERROR_NO_DATA == e[0]:
             pass # all packets dumped, move on
         else:
             raise
-    if len(ttl_observed) > 1:
-        return True
-    return False
+    return found
 
 
 if 1 == len(sys.argv):
