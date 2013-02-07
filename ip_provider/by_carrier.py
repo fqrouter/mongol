@@ -12,22 +12,40 @@ import sys
 # which makes this carrier based ip selection interesting
 
 RE_INETNUM = re.compile(r'inetnum:\s+(.+?)\s+-\s+(.+)', re.IGNORECASE)
+RE_AUTNUM = re.compile(r'aut\-num:\s+AS(\d+)', re.IGNORECASE)
 
-def main(carrier, whoise_server='whois.apnic.net'):
+def main(carrier, query_type='ip', whoise_server='whois.apnic.net'):
     lines = query_whoise(whoise_server, '-i mb MAINT-%s' % carrier).splitlines()
     for line in lines:
-        result = RE_INETNUM.findall(line)
-        if result:
-            start_ip, end_ip = result[0]
-            if start_ip == end_ip:
-                return start_ip
-            else:
-                try:
-                    print(get_random_ip_in_range(start_ip, end_ip))
-                except:
-                    import traceback
-                    traceback.print_exc()
-                    print(start_ip, end_ip, '!!!')
+        if 'asn' == query_type:
+            query_asn(line)
+        else:
+            assert 'ip' == query_type
+            query_ip(line)
+    if 'asn' == query_type:
+        print('') # end indicator
+
+
+def query_asn(line):
+    result = RE_AUTNUM.findall(line)
+    if result:
+        print(result[0])
+
+
+def query_ip(line):
+    result = RE_INETNUM.findall(line)
+    if result:
+        start_ip, end_ip = result[0]
+        if start_ip == end_ip:
+            return start_ip
+        else:
+            try:
+                print(get_random_ip_in_range(start_ip, end_ip))
+            except:
+                import traceback
+
+                traceback.print_exc()
+                print(start_ip, end_ip, '!!!')
 
 
 def query_whoise(server, query):

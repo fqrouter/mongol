@@ -22,6 +22,7 @@ def main(as_number=None):
 
 
 def list_ip_for_asn(as_number):
+    urllib2.socket.setdefaulttimeout(10)
     request = urllib2.Request('http://bgp.he.net/AS%s' % as_number)
     request.add_header('User-Agent',
         'Mozilla/5.0 (Windows; U; Windows NT 5.1; zh-CN; rv:1.8.1.14) Gecko/20080404 (FoxPlus) Firefox/2.0.0.14')
