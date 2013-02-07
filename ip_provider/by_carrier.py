@@ -74,13 +74,14 @@ def get_random_ip_in_range(start_ip, end_ip):
 
 
 if 1 == len(sys.argv):
-    print('[Usage] ./by_carrier.py carrier [whoise_server] > ip_list.txt')
+    print('[Usage] ./by_carrier.py carrier [ip|asn] [whoise_server] > ip_list.txt')
     print('China Telecom:\t\t\t\tCHINANET')
     print('China Unicom:\t\t\t\tCNCGROUP')
     print('China Mobile:\t\t\t\tCN-CMCC')
     print('China Railway Telecom:\t\t\tCN-CRTC')
     print('China Education & Research Network:\tCERNET-AP')
     print('China Science & Technology Network:\tCN-CSTNET')
+    print('Can also: ./by_carrier.py CHINANET asn | ./by_asn @stdin')
     sys.exit(3)
 else:
     main(*sys.argv[1:])
