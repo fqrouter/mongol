@@ -23,7 +23,7 @@ import time
 # can be told from the ICMP packet sent back previously.
 
 # source http://zh.wikipedia.org/wiki/%E5%9F%9F%E5%90%8D%E6%9C%8D%E5%8A%A1%E5%99%A8%E7%BC%93%E5%AD%98%E6%B1%A1%E6%9F%93
-WRONG_ANSWERS = {
+WRONG_ANSWERS = set([
     '4.36.66.178',
     '8.7.198.45',
     '37.61.54.158',
@@ -55,7 +55,7 @@ WRONG_ANSWERS = {
     '213.169.251.35',
     '216.221.188.182',
     '216.234.179.13'
-}
+])
 
 def find_probe_src():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
