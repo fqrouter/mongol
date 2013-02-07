@@ -38,7 +38,7 @@ import dpkt.tcp
 def find_probe_src():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        s.connect(('123.125.114.144', 80))
+        s.connect(('8.8.8.8', 80))
         return s.getsockname()[0]
     finally:
         s.close()
