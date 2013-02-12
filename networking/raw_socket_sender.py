@@ -1,5 +1,6 @@
 from scapy.layers.inet import TCP, UDP
 import socket
+import atexit
 
 raw_socket = None
 
@@ -18,4 +19,5 @@ def get_socket():
         return raw_socket
     raw_socket = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
     raw_socket.setsockopt(socket.SOL_IP, socket.IP_HDRINCL, 1)
+    atexit.register(raw_socket.close)
     return raw_socket

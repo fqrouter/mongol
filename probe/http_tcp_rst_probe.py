@@ -2,6 +2,9 @@
 import sys
 import time
 import os
+import socket
+import struct
+import atexit
 from scapy.layers.inet import IP, TCP, IPerror, TCPerror
 from scapy.packet import Raw
 
@@ -38,21 +41,29 @@ import networking
 # So by checking TTL of returning packets we can tell if GFW is jamming the connection.
 # Also based on the ICMP packet we can tell the ip address of router attached GFW.
 
+ERROR_CONNECTION_RESET = 104
 TH_SYN = 0x02        # synchronize sequence numbers
 TH_RST = 0x04        # reset connection
 TH_ACK = 0x10        # acknowledgment number set
 SPORT = 19840
 DPORT = 80
+ROOT_USER_ID = 0
 
 def main(dst, ttl):
     iface, src, _ = networking.get_route(dst)
-    sniffer = networking.create_sniffer(iface, src, dst)
-    probe = HttpTcpRstProbe(src, SPORT, dst, DPORT, int(ttl), sniffer)
-    sniffer.start_sniffing()
-    probe.poke()
-    time.sleep(2)
-    sniffer.stop_sniffing()
-    report = probe.peek()
+    if ROOT_USER_ID == os.geteuid():
+        sniffer = networking.create_sniffer(iface, src, dst)
+        probe = HttpTcpRstProbe(src, SPORT, dst, DPORT, int(ttl), sniffer)
+        sniffer.start_sniffing()
+        probe.poke()
+        time.sleep(2)
+        sniffer.stop_sniffing()
+        report = probe.peek()
+    else:
+        probe = HttpTcpRstProbe(src, SPORT, dst, DPORT, int(ttl), sniffer=None)
+        probe.poke()
+        time.sleep(2)
+        report = probe.peek()
     report.pop('PACKETS')
     print(report)
 
@@ -76,28 +87,69 @@ class HttpTcpRstProbe(object):
 
 
     def poke(self):
-        networking.send(IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 1, ttl=self.ttl) / TCP(
-            sport=self.sport, dport=self.dport, flags='S', seq=0))
+        self.send_syn()
         time.sleep(2)
         self.http_get_sent_at = time.time()
-        networking.send(IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 2, ttl=self.ttl) / TCP(
-            sport=self.sport, dport=self.dport, flags='A', seq=1, ack=100) / Raw(
-            'GET / HTTP/1.1\r\nHost: www.facebook.com\r\n\r\n'))
+        self.send_http_get()
+
+    def send_syn(self):
+        if self.sniffer:
+            networking.send(IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 1, ttl=self.ttl) / TCP(
+                sport=self.sport, dport=self.dport, flags='S', seq=0))
+        else:
+            self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+            def immediately_close_tcp_socket_so_sport_can_be_reused():
+                l_onoff = 1
+                l_linger = 0
+                self.tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', l_onoff, l_linger))
+                self.tcp_socket.close()
+
+            atexit.register(immediately_close_tcp_socket_so_sport_can_be_reused)
+            self.tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.tcp_socket.settimeout(2)
+            self.tcp_socket.bind((self.src, self.sport)) # if sport change the route going through might change
+            self.tcp_socket.connect((self.dst, self.dport))
+
+    def send_http_get(self):
+        http_get = 'GET / HTTP/1.1\r\nHost: www.facebook.com\r\n\r\n'
+        if self.sniffer:
+            networking.send(IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 2, ttl=self.ttl) / TCP(
+                sport=self.sport, dport=self.dport, flags='A', seq=1, ack=100) / Raw(http_get))
+        else:
+            self.tcp_socket.setsockopt(socket.SOL_IP, socket.IP_TTL, self.ttl)
+            try:
+                self.tcp_socket.send(http_get)
+            except socket.error as e:
+                if ERROR_CONNECTION_RESET == e[0]:
+                    self.report['RST_AFTER_SYN?'] = True
+                else:
+                    raise
 
     def peek(self):
-        for packet in self.sniffer.packets:
-            if TCP in packet:
-                self.analyze_tcp_packet(packet)
-            elif IPerror in packet and TCPerror in packet:
-                self.analyze_tcp_error_packet(packet)
-        return self.report
+        if self.sniffer:
+            for packet in self.sniffer.packets:
+                if TCP in packet:
+                    self.analyze_tcp_packet(packet)
+                elif IPerror in packet and TCPerror in packet:
+                    self.analyze_tcp_error_packet(packet)
+            return self.report
+        else:
+            if not self.report['RST_AFTER_SYN?']:
+                try:
+                    self.tcp_socket.recv(1024)
+                except socket.error as e:
+                    if ERROR_CONNECTION_RESET == e[0]:
+                        self.report['RST_AFTER_HTTP_GET?'] = True
+                    else:
+                        raise
+            return self.report
 
     def analyze_tcp_packet(self, packet):
         if self.dport != packet[TCP].sport:
             return
         if self.sport != packet[TCP].dport:
             return
-        packet.show2()
         if packet[TCP].flags & TH_SYN and packet[TCP].flags & TH_ACK:
             self.record_syn_ack(packet)
         elif packet[TCP].flags & TH_RST:
