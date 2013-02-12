@@ -224,7 +224,7 @@ class TcpRstProbe(object):
 
 
 if 1 == len(sys.argv):
-    print('[Usage] ./http_tcp_rst_probe.py destination_ip ttl')
+    print('[Usage] ./tcp_rst_probe.py destination_ip ttl')
     sys.exit(3)
 else:
     main(*sys.argv[1:])
