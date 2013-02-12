@@ -222,9 +222,9 @@ class TcpRstProbe(object):
             self.report['PACKETS'].append(('ROUTER_IP_FOUND_BY_OFFENDING_PAYLOAD', packet))
             self.report['ROUTER_IP_FOUND_BY_OFFENDING_PAYLOAD'] = router_ip
 
-
-if 1 == len(sys.argv):
-    print('[Usage] ./tcp_rst_probe.py destination_ip ttl')
-    sys.exit(3)
-else:
-    main(*sys.argv[1:])
+if '__main__' == __name__:
+    if 1 == len(sys.argv):
+        print('[Usage] ./tcp_rst_probe.py destination_ip ttl')
+        sys.exit(3)
+    else:
+        main(*sys.argv[1:])

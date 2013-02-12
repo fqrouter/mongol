@@ -177,9 +177,9 @@ class DnsWrongAnswerProbe(object):
             self.report['PACKETS'].append(('ROUTER_IP', packet))
             self.report['ROUTER_IP'] = router_ip
 
-
-if 1 == len(sys.argv):
-    print('[Usage] ./dns_wrong_answer_probe.py destination_ip ttl')
-    sys.exit(3)
-else:
-    main(*sys.argv[1:])
+if '__main__' == __name__:
+    if 1 == len(sys.argv):
+        print('[Usage] ./dns_wrong_answer_probe.py destination_ip ttl')
+        sys.exit(3)
+    else:
+        main(*sys.argv[1:])

@@ -153,8 +153,9 @@ class UdpPacketDropProbe(object):
             self.report['PACKETS'].append(('ROUTER_IP_FOUND_BY_PACKET_%s' % packet_index, packet))
             self.report['ROUTER_IP_FOUND_BY_PACKET_%s' % packet_index] = router_ip
 
-if 1 == len(sys.argv):
-    print('[Usage] ./udp_packet_drop_probe.py destination_ip sport ttl')
-    sys.exit(3)
-else:
-    main(*sys.argv[1:])
+if '__main__' == __name__:
+    if 1 == len(sys.argv):
+        print('[Usage] ./udp_packet_drop_probe.py destination_ip sport ttl')
+        sys.exit(3)
+    else:
+        main(*sys.argv[1:])
