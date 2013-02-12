@@ -105,7 +105,8 @@ class DnsWrongAnswerProbe(object):
     def poke(self):
         question = DNS(rd=1, qd=DNSQR(qname="twitter.com"))
         if self.sniffer:
-            networking.send(IP(dst=self.dst, src=self.src, id=self.ttl, ttl=self.ttl) / UDP(sport=self.sport) / question)
+            networking.send(
+                IP(dst=self.dst, src=self.src, id=self.ttl, ttl=self.ttl) / UDP(sport=self.sport) / question)
         else:
             self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
             self.udp_socket.settimeout(0)
@@ -121,27 +122,27 @@ class DnsWrongAnswerProbe(object):
             self.udp_socket.close()
         for packet in packets:
             if DNS in packet:
-                self.analyze_dns_packet(packet[DNS])
-            if IPerror in packet and UDPerror in packet:
+                self.analyze_dns_packet(packet)
+            elif IPerror in packet and UDPerror in packet:
                 self.analyze_udp_error_packet(packet)
         return self.report
 
-    def analyze_dns_packet(self, dns_packet):
-        if 0 == dns_packet.ancount:
-            return self.record_wrong_answer('[BLANK]', dns_packet)
-        for i in range(dns_packet.ancount):
-            if DNS_TYPE_A == dns_packet.an[i].type:
-                answer = dns_packet.an[i].rdata
+    def analyze_dns_packet(self, packet):
+        if self.dport != packet[UDP].sport:
+            return
+        if self.sport != packet[UDP].dport:
+            return
+        if 0 == packet[DNS].ancount:
+            return self.record_wrong_answer('[BLANK]', packet)
+        for i in range(packet[DNS].ancount):
+            if DNS_TYPE_A == packet[DNS].an[i].type:
+                answer = packet[DNS].an[i].rdata
                 if answer in WRONG_ANSWERS:
-                    return self.record_wrong_answer(answer, dns_packet)
+                    return self.record_wrong_answer(answer, packet)
                 else:
-                    return self.record_right_answer(answer, dns_packet)
+                    return self.record_right_answer(answer, packet)
 
     def analyze_udp_error_packet(self, packet):
-        if self.src != packet[IPerror].src:
-            return
-        if self.dst != packet[IPerror].dst:
-            return
         if self.sport != packet[UDPerror].sport:
             return
         if self.dport != packet[UDPerror].dport:
