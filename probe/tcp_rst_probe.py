@@ -93,6 +93,7 @@ class TcpRstProbe(object):
             'RST_AFTER_OFFENDING_PAYLOAD?': None,
             'PACKETS': []
         }
+        self.tcp_socket = None
 
     def poke(self):
         self.send_syn()
@@ -108,18 +109,14 @@ class TcpRstProbe(object):
             self.report['PACKETS'].append(('SYN', packet))
         else:
             self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-            def immediately_close_tcp_socket_so_sport_can_be_reused():
-                l_onoff = 1
-                l_linger = 0
-                self.tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', l_onoff, l_linger))
-                self.tcp_socket.close()
-
-            atexit.register(immediately_close_tcp_socket_so_sport_can_be_reused)
+            atexit.register(networking.immediately_close_tcp_socket_so_sport_can_be_reused, self.tcp_socket)
             self.tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.tcp_socket.settimeout(2)
             self.tcp_socket.bind((self.src, self.sport)) # if sport change the route going through might change
             self.tcp_socket.connect((self.dst, self.dport))
+
+    def close(self):
+        networking.immediately_close_tcp_socket_so_sport_can_be_reused(self.tcp_socket)
 
     def send_offending_payload(self):
         if 'DNS' == self.offending_payload_type:

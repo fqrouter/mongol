@@ -101,6 +101,7 @@ class DnsWrongAnswerProbe(object):
             'RIGHT_ANSWER': None,
             'PACKETS': []
         }
+        self.udp_socket = None
 
     def poke(self):
         question = DNS(rd=1, qd=DNSQR(qname="twitter.com"))
@@ -128,6 +129,10 @@ class DnsWrongAnswerProbe(object):
             elif IPerror in packet and UDPerror in packet:
                 self.analyze_udp_error_packet(packet)
         return self.report
+
+    def close(self):
+        if self.udp_socket:
+            self.udp_socket.close()
 
     def analyze_dns_packet(self, packet):
         if self.dport != packet[UDP].sport:

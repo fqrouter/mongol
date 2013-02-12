@@ -3,6 +3,8 @@ import socket
 import os
 import sys
 import time
+import atexit
+import struct
 from scapy.layers.inet import IP, TCP, IPerror, TCPerror
 
 MONGOL_SYS_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,15 +36,25 @@ import networking
 # But there is a great chance the router is the same router, as we can tell same router is responsible for
 # TCP RST and FAKE DNS ANSWER.
 
+TH_SYN = 0x02        # synchronize sequence numbers
+TH_ACK = 0x10        # acknowledgment number set
+ROOT_USER_ID = 0
+
 def main(dst, sport, ttl):
     iface, src, _ = networking.get_route(dst)
-    sniffer = networking.create_sniffer(iface, src, dst)
-    probe = TcpPacketDropProbe(src, int(sport), dst, 80, int(ttl), sniffer)
-    sniffer.start_sniffing()
-    probe.poke()
-    time.sleep(2)
-    sniffer.stop_sniffing()
-    report = probe.peek()
+    if ROOT_USER_ID == os.geteuid():
+        sniffer = networking.create_sniffer(iface, src, dst)
+        probe = TcpPacketDropProbe(src, int(sport), dst, 80, int(ttl), sniffer)
+        sniffer.start_sniffing()
+        probe.poke()
+        time.sleep(2)
+        sniffer.stop_sniffing()
+        report = probe.peek()
+    else:
+        probe = TcpPacketDropProbe(src, int(sport), dst, 80, int(ttl), sniffer=None)
+        probe.poke()
+        time.sleep(2)
+        report = probe.peek()
     packets = report.pop('PACKETS')
     print(report)
     for mark, packet in packets:
@@ -62,24 +74,43 @@ class TcpPacketDropProbe(object):
             'ROUTER_IP_FOUND_BY_PACKET_1': None,
             'ROUTER_IP_FOUND_BY_PACKET_2': None,
             'ROUTER_IP_FOUND_BY_PACKET_3': None,
+            'SYN_ACK?': None,
             'PACKETS': []
         }
+        self.tcp_socket = None
 
     def poke(self):
-        syn1 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 1, ttl=self.ttl) / TCP(
-            sport=self.sport, dport=self.dport, flags='S', seq=0)
-        networking.send(syn1)
-        self.report['PACKETS'].append(('PACKET_1', syn1))
-        syn2 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 2, ttl=self.ttl) / TCP(
-            sport=self.sport, dport=self.dport, flags='S', seq=0)
-        networking.send(syn2)
-        self.report['PACKETS'].append(('PACKET_2', syn2))
-        syn3 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 3, ttl=self.ttl) / TCP(
-            sport=self.sport, dport=self.dport, flags='S', seq=0)
-        networking.send(syn3)
-        self.report['PACKETS'].append(('PACKET_3', syn3))
+        if self.sniffer:
+            syn1 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 1, ttl=self.ttl) / TCP(
+                sport=self.sport, dport=self.dport, flags='S', seq=0)
+            networking.send(syn1)
+            self.report['PACKETS'].append(('PACKET_1', syn1))
+            syn2 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 2, ttl=self.ttl) / TCP(
+                sport=self.sport, dport=self.dport, flags='S', seq=0)
+            networking.send(syn2)
+            self.report['PACKETS'].append(('PACKET_2', syn2))
+            syn3 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 3, ttl=self.ttl) / TCP(
+                sport=self.sport, dport=self.dport, flags='S', seq=0)
+            networking.send(syn3)
+            self.report['PACKETS'].append(('PACKET_3', syn3))
+        else:
+            self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            atexit.register(networking.immediately_close_tcp_socket_so_sport_can_be_reused, self.tcp_socket)
+            self.tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self.tcp_socket.settimeout(2)
+            self.tcp_socket.bind((self.src, self.sport)) # if sport change the route going through might change
+            try:
+                self.tcp_socket.connect((self.dst, self.dport))
+                self.report['SYN_ACK?'] = True
+            except socket.timeout:
+                pass
+
+    def close(self):
+        networking.immediately_close_tcp_socket_so_sport_can_be_reused(self.tcp_socket)
 
     def peek(self):
+        if not self.sniffer:
+            return self.report
         for packet in self.sniffer.packets:
             if TCP in packet:
                 self.analyze_tcp_packet(packet)
@@ -92,7 +123,10 @@ class TcpPacketDropProbe(object):
             return
         if self.sport != packet[TCP].dport:
             return
-        self.report['PACKETS'].append(('UNKNOWN', packet))
+        if packet[TCP].flags & TH_SYN and packet[TCP].flags & TH_ACK:
+            self.record_syn_ack(packet)
+        else:
+            self.report['PACKETS'].append(('UNKNOWN', packet))
 
     def analyze_tcp_error_packet(self, packet):
         if self.sport != packet[TCPerror].sport:
@@ -107,6 +141,13 @@ class TcpPacketDropProbe(object):
             self.record_router_ip(packet.src, 3, packet)
         else:
             self.report['PACKETS'].append(('UNKNOWN', packet))
+
+    def record_syn_ack(self, packet):
+        if self.report['SYN_ACK?']:
+            self.report['PACKETS'].append(('ADDITIONAL_SYN_ACK', packet))
+        else:
+            self.report['PACKETS'].append(('SYN_ACK', packet))
+            self.report['SYN_ACK?'] = True
 
     def record_router_ip(self, router_ip, packet_index, packet):
         if self.report['ROUTER_IP_FOUND_BY_PACKET_%s' % packet_index]:
