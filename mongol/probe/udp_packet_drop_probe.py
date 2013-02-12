@@ -4,13 +4,13 @@ import os
 import sys
 import time
 import atexit
-import struct
-from scapy.layers.inet import IP, TCP, IPerror, TCPerror
+from scapy.layers.inet import IP, UDP, IPerror, UDPerror
+from scapy.layers.dns import DNS, DNSQR
 
-MONGOL_SYS_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MONGOL_SYS_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if MONGOL_SYS_PATH not in sys.path:
     sys.path.append(MONGOL_SYS_PATH)
-import networking
+from mongol import networking
 
 # Probe using the fact GFW will configure some router to only drop packet of certain source ip and port combination
 #
@@ -36,6 +36,7 @@ import networking
 # But there is a great chance the router is the same router, as we can tell same router is responsible for
 # TCP RST and FAKE DNS ANSWER.
 
+ERROR_NO_DATA = 11
 TH_SYN = 0x02        # synchronize sequence numbers
 TH_ACK = 0x10        # acknowledgment number set
 ROOT_USER_ID = 0
@@ -44,14 +45,14 @@ def main(dst, sport, ttl):
     iface, src, _ = networking.get_route(dst)
     if ROOT_USER_ID == os.geteuid():
         sniffer = networking.create_sniffer(iface, src, dst)
-        probe = TcpPacketDropProbe(src, int(sport), dst, 80, int(ttl), sniffer)
+        probe = UdpPacketDropProbe(src, int(sport), dst, 53, int(ttl), sniffer)
         sniffer.start_sniffing()
         probe.poke()
         time.sleep(2)
         sniffer.stop_sniffing()
         report = probe.peek()
     else:
-        probe = TcpPacketDropProbe(src, int(sport), dst, 80, int(ttl), sniffer=None)
+        probe = UdpPacketDropProbe(src, int(sport), dst, 53, int(ttl), sniffer=None)
         probe.poke()
         time.sleep(2)
         report = probe.peek()
@@ -62,7 +63,7 @@ def main(dst, sport, ttl):
         print('[%s] %s' % (mark, formatted_packet))
 
 
-class TcpPacketDropProbe(object):
+class UdpPacketDropProbe(object):
     def __init__(self, src, sport, dst, dport, ttl, sniffer):
         self.src = src
         self.sport = sport
@@ -74,66 +75,70 @@ class TcpPacketDropProbe(object):
             'ROUTER_IP_FOUND_BY_PACKET_1': None,
             'ROUTER_IP_FOUND_BY_PACKET_2': None,
             'ROUTER_IP_FOUND_BY_PACKET_3': None,
-            'SYN_ACK?': None,
+            'RESPONDED?': None,
             'PACKETS': []
         }
-        self.tcp_socket = None
+        self.udp_socket = None
 
     def poke(self):
+        question = DNS(rd=1, qd=DNSQR(qname='www.gov.cn'))
         if self.sniffer:
-            syn1 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 1, ttl=self.ttl) / TCP(
-                sport=self.sport, dport=self.dport, flags='S', seq=0)
+            syn1 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 1, ttl=self.ttl) / UDP(
+                sport=self.sport, dport=self.dport) / question
             networking.send(syn1)
             self.report['PACKETS'].append(('PACKET_1', syn1))
-            syn2 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 2, ttl=self.ttl) / TCP(
-                sport=self.sport, dport=self.dport, flags='S', seq=0)
+            syn2 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 2, ttl=self.ttl) / UDP(
+                sport=self.sport, dport=self.dport) / question
             networking.send(syn2)
             self.report['PACKETS'].append(('PACKET_2', syn2))
-            syn3 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 3, ttl=self.ttl) / TCP(
-                sport=self.sport, dport=self.dport, flags='S', seq=0)
+            syn3 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 3, ttl=self.ttl) / UDP(
+                sport=self.sport, dport=self.dport) / question
             networking.send(syn3)
             self.report['PACKETS'].append(('PACKET_3', syn3))
         else:
-            self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            atexit.register(networking.immediately_close_tcp_socket_so_sport_can_be_reused, self.tcp_socket)
-            self.tcp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            self.tcp_socket.setsockopt(socket.SOL_IP, socket.IP_TTL, self.ttl)
-            self.tcp_socket.settimeout(2)
-            self.tcp_socket.bind((self.src, self.sport)) # if sport change the route going through might change
-            try:
-                self.tcp_socket.connect((self.dst, self.dport))
-                self.report['SYN_ACK?'] = True
-            except socket.timeout:
-                pass
+            self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+            atexit.register(self.udp_socket.close)
+            self.udp_socket.setsockopt(socket.SOL_IP, socket.IP_TTL, self.ttl)
+            self.udp_socket.settimeout(0)
+            self.udp_socket.bind((self.src, self.sport)) # if sport change the route going through might change
+            self.udp_socket.sendto(str(question), (self.dst, self.dport))
 
     def close(self):
-        networking.immediately_close_tcp_socket_so_sport_can_be_reused(self.tcp_socket)
+        if self.udp_socket:
+            self.udp_socket.close()
 
     def peek(self):
         if not self.sniffer:
+            try:
+                self.udp_socket.recv(1024)
+                self.report['RESPONDED?'] = True
+            except socket.error as e:
+                if ERROR_NO_DATA == e[0]:
+                    pass
+                else:
+                    raise
             return self.report
         for packet in self.sniffer.packets:
-            if TCP in packet:
-                self.analyze_tcp_packet(packet)
-            elif IPerror in packet and TCPerror in packet:
-                self.analyze_tcp_error_packet(packet)
+            if UDP in packet:
+                self.analyze_udp_packet(packet)
+            elif IPerror in packet and UDPerror in packet:
+                self.analyze_udp_error_packet(packet)
         return self.report
 
-    def analyze_tcp_packet(self, packet):
-        if self.dport != packet[TCP].sport:
+    def analyze_udp_packet(self, packet):
+        if self.dport != packet[UDP].sport:
             return
-        if self.sport != packet[TCP].dport:
+        if self.sport != packet[UDP].dport:
             return
-        if packet[TCP].flags & TH_SYN and packet[TCP].flags & TH_ACK:
-            self.record_syn_ack(packet)
-        else:
-            self.report['PACKETS'].append(('UNKNOWN', packet))
+        self.report['RESPONDED?'] = True
+        self.report['PACKETS'].append(('UNKNOWN', packet))
 
-    def analyze_tcp_error_packet(self, packet):
-        if self.sport != packet[TCPerror].sport:
+    def analyze_udp_error_packet(self, packet):
+        if self.sport != packet[UDPerror].sport:
             return
-        if self.dport != packet[TCPerror].dport:
+        if self.dport != packet[UDPerror].dport:
             return
+        self.report['RESPONDED?'] = True
         if self.ttl * 10 + 1 == packet[IPerror].id:
             self.record_router_ip(packet.src, 1, packet)
         elif self.ttl * 10 + 2 == packet[IPerror].id:
@@ -142,13 +147,6 @@ class TcpPacketDropProbe(object):
             self.record_router_ip(packet.src, 3, packet)
         else:
             self.report['PACKETS'].append(('UNKNOWN', packet))
-
-    def record_syn_ack(self, packet):
-        if self.report['SYN_ACK?']:
-            self.report['PACKETS'].append(('ADDITIONAL_SYN_ACK', packet))
-        else:
-            self.report['PACKETS'].append(('SYN_ACK', packet))
-            self.report['SYN_ACK?'] = True
 
     def record_router_ip(self, router_ip, packet_index, packet):
         if self.report['ROUTER_IP_FOUND_BY_PACKET_%s' % packet_index]:
@@ -159,7 +157,7 @@ class TcpPacketDropProbe(object):
 
 if '__main__' == __name__:
     if 1 == len(sys.argv):
-        print('[Usage] ./tcp_packet_drop_probe.py destination_ip sport ttl')
+        print('[Usage] ./udp_packet_drop_probe.py destination_ip sport ttl')
         sys.exit(3)
     else:
         main(*sys.argv[1:])

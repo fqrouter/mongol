@@ -3,13 +3,15 @@ import sys
 import os
 import time
 import socket
+import atexit
 from scapy.layers.inet import IP, UDP, UDPerror, IPerror
 from scapy.layers.dns import DNS, DNSQR
 
-MONGOL_SYS_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MONGOL_SYS_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+print(MONGOL_SYS_PATH)
 if MONGOL_SYS_PATH not in sys.path:
     sys.path.append(MONGOL_SYS_PATH)
-import networking
+from mongol import networking
 
 # Probe using the fact GFW will send back wrong dns answer if the dns question is about certain domain name
 #
@@ -112,6 +114,7 @@ class DnsWrongAnswerProbe(object):
             self.report['PACKETS'].append(('QUESTION', packet))
         else:
             self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+            atexit.register(self.udp_socket.close)
             self.udp_socket.settimeout(0)
             self.udp_socket.setsockopt(socket.SOL_IP, socket.IP_TTL, self.ttl)
             self.udp_socket.bind((self.src, self.sport))
@@ -135,10 +138,11 @@ class DnsWrongAnswerProbe(object):
             self.udp_socket.close()
 
     def analyze_dns_packet(self, packet):
-        if self.dport != packet[UDP].sport:
-            return
-        if self.sport != packet[UDP].dport:
-            return
+        if UDP in packet:
+            if self.dport != packet[UDP].sport:
+                return
+            if self.sport != packet[UDP].dport:
+                return
         if 0 == packet[DNS].ancount:
             return self.record_wrong_answer('[BLANK]', packet)
         for i in range(packet[DNS].ancount):

@@ -9,10 +9,10 @@ from scapy.layers.inet import IP, TCP, IPerror, TCPerror
 from scapy.layers.dns import DNS, DNSQR
 from scapy.packet import Raw
 
-MONGOL_SYS_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MONGOL_SYS_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if MONGOL_SYS_PATH not in sys.path:
     sys.path.append(MONGOL_SYS_PATH)
-import networking
+from mongol import networking
 
 # Probe using the fact GFW will send back TCP RST if keyword detected in HTTP GET URL or HOST
 #
