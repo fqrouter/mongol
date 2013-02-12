@@ -1,10 +1,12 @@
 from scapy.layers.inet import TCP, UDP
 import socket
 import atexit
+import time
 
 raw_socket = None
 
 def send(packet):
+    packet.time = time.time()
     if UDP in packet:
         get_socket().sendto(str(packet), (packet.dst, packet[UDP].dport))
     elif TCP in packet:
