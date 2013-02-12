@@ -105,8 +105,10 @@ class DnsWrongAnswerProbe(object):
     def poke(self):
         question = DNS(rd=1, qd=DNSQR(qname="twitter.com"))
         if self.sniffer:
-            networking.send(
-                IP(dst=self.dst, src=self.src, id=self.ttl, ttl=self.ttl) / UDP(sport=self.sport) / question)
+            packet = IP(dst=self.dst, src=self.src, id=self.ttl, ttl=self.ttl) / UDP(
+                sport=self.sport) / question
+            networking.send(packet)
+            self.report['PACKETS'].append(('QUESTION', packet))
         else:
             self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
             self.udp_socket.settimeout(0)

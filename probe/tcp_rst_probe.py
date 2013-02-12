@@ -72,7 +72,7 @@ def main(dst, ttl, offending_payload_type='HTTP'):
     packets = report.pop('PACKETS')
     print(report)
     for mark, packet in packets:
-        formatted_packet = packet.sprintf('%.time% %IP.src% -> %IP.dst% %r,TCP.flags%')
+        formatted_packet = packet.sprintf('%.time% %IP.src% -> %IP.dst% %TCP.flags%')
         print('[%s] %s' % (mark, formatted_packet))
 
 
