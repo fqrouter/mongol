@@ -1,2 +1,4 @@
 .idea
 *.pyc
+gfw-attached-routers.csv
+packets/*.tar.gz

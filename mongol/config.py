@@ -1,21 +1,34 @@
 sniffer_type = 'L3'
-interval_between_poke_and_peek = 2
-interval_between_syn_and_http_get = 0.5
-interval_between_syn_and_dns_question = 0.5
-dns_wrong_answer_probe_sport = 19841
-dns_wrong_answer_probe_dport = 53
-http_tcp_rst_probe_sport = 19842
-http_tcp_rst_probe_dport = 80
-dns_tcp_rst_probe_sport = 19843
-dns_tcp_rst_probe_dport = 53
-min_ttl = 4
+min_ttl = 6
 max_ttl = 14
 debug = True
-blocked_tcp_port = None
-comparison_tcp_port = None
-blocked_udp_port = None
-comparison_udp_port = None
 fixed_route = None # ('venet0:0', 'a.b.c.d')
+interval_between_poke_and_peek = 2
+dns_wrong_answer_probe = {
+    'sport': 19841,
+    'dport': 53
+}
+http_tcp_rst_probe = {
+    'sport': 19842,
+    'dport': 80,
+    'interval_between_syn_and_http_get': 0.5
+}
+dns_tcp_rst_probe = {
+    'sport': 19843,
+    'dport': 53,
+    'interval_between_syn_and_dns_question': 0.5
+}
+tcp_packet_drop_probe = {
+    'blocked_sport': 8080,
+    'comparison_sport': 8081,
+    'dport': 1234
+}
+udp_packet_drop_probe = None
+#udp_packet_drop_probe = {
+#    'blocked_sport': 8080,
+#    'comparison_sport': 8081,
+#    'dport': 53
+#}
 
 import os
 import sys

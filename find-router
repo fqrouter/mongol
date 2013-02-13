@@ -1,10 +1,19 @@
 #!/usr/bin/env python
 import time
+import datetime
 import sys
+import csv
+import os
+import shutil
+import subprocess
+from scapy.utils import wrpcap
 from mongol.probe import DnsWrongAnswerProbe
 from mongol.probe import TcpRstProbe
+from mongol.probe import TcpPacketDropProbe
+from mongol.probe import UdpPacketDropProbe
 from mongol import networking
 from mongol import config
+
 
 if len(sys.argv) == 1:
     print('[usage] ./find-router destination-ip')
@@ -16,35 +25,66 @@ def main(dst):
     iface, src, _ = networking.get_route(dst)
     if config.debug:
         print('probing between %s <=> %s, at interface %s' % (src, dst, iface))
-    for ttl in range(config.min_ttl, config.max_ttl + 1):
-        if config.debug:
-            print('')
-            print('=== ttl: %s ===' % ttl)
-        sniffer = networking.create_sniffer(iface, src, dst, config.sniffer_type)
-        probes = {
-            'DNS_WRONG_ANSWER': DnsWrongAnswerProbe(src, config.dns_wrong_answer_probe_sport,
-                dst, config.dns_wrong_answer_probe_dport, ttl, sniffer),
-            'HTTP_TCP_RST': TcpRstProbe(src, config.http_tcp_rst_probe_sport,
-                dst, config.http_tcp_rst_probe_dport, ttl, sniffer, offending_payload_type='HTTP',
-                interval_between_syn_and_offending_payload=config.interval_between_syn_and_http_get),
-            'DNS_TCP_RST': TcpRstProbe(src, config.dns_tcp_rst_probe_sport,
-                dst, config.dns_tcp_rst_probe_dport, ttl, sniffer, offending_payload_type='DNS',
-                interval_between_syn_and_offending_payload=config.interval_between_syn_and_dns_question)
-        }
-        try:
-            sniffer.start_sniffing()
-            for probe in probes.values():
-                probe.poke()
-            time.sleep(config.interval_between_poke_and_peek)
-            sniffer.stop_sniffing()
-            for probe in probes.values():
-                probe.peek()
-        finally:
-            for probe in probes.values():
-                probe.close()
-        dump_packets(probes)
-        if analyze_reports(probes):
-            return
+    with open('gfw-attached-routers.csv', 'a') as f:
+        csv_writer = csv.writer(f)
+        for ttl in range(config.min_ttl, config.max_ttl + 1):
+            should_continue = do_probing(iface, src, dst, ttl, csv_writer)
+            if not should_continue:
+                return
+
+
+def do_probing(iface, src, dst, ttl, csv_writer):
+    if config.debug:
+        print('')
+        print('=== ttl: %s ===' % ttl)
+    sniffer = networking.create_sniffer(iface, src, dst, config.sniffer_type)
+    probes = {}
+    if config.dns_wrong_answer_probe:
+        probes['DNS_WRONG_ANSWER'] = DnsWrongAnswerProbe(
+            src, config.dns_wrong_answer_probe['sport'],
+            dst, config.dns_wrong_answer_probe['dport'], ttl, sniffer)
+    if config.http_tcp_rst_probe:
+        probe_config = config.http_tcp_rst_probe
+        probes['HTTP_TCP_RST'] = TcpRstProbe(
+            src, probe_config['sport'],
+            dst, probe_config['dport'], ttl, sniffer, offending_payload_type='HTTP',
+            interval_between_syn_and_offending_payload=probe_config['interval_between_syn_and_http_get'])
+    if config.dns_tcp_rst_probe:
+        probe_config = config.dns_tcp_rst_probe
+        probes['DNS_TCP_RST'] = TcpRstProbe(
+            src, probe_config['sport'],
+            dst, probe_config['dport'], ttl, sniffer, offending_payload_type='DNS',
+            interval_between_syn_and_offending_payload=probe_config['interval_between_syn_and_dns_question'])
+    if config.tcp_packet_drop_probe:
+        probes['TCP_PACKET_DROP_BLOCKED'] = TcpPacketDropProbe(
+            src, config.tcp_packet_drop_probe['blocked_sport'],
+            dst, config.tcp_packet_drop_probe['dport'], ttl, sniffer)
+        probes['TCP_PACKET_DROP_COMPARISON'] = TcpPacketDropProbe(
+            src, config.tcp_packet_drop_probe['comparison_sport'],
+            dst, config.tcp_packet_drop_probe['dport'], ttl, sniffer)
+    if config.udp_packet_drop_probe:
+        probes['UDP_PACKET_DROP_BLOCKED'] = UdpPacketDropProbe(
+            src, config.udp_packet_drop_probe['blocked_sport'],
+            dst, config.udp_packet_drop_probe['dport'], ttl, sniffer)
+        probes['UDP_PACKET_DROP_COMPARISON'] = UdpPacketDropProbe(
+            src, config.udp_packet_drop_probe['comparison_sport'],
+            dst, config.udp_packet_drop_probe['dport'], ttl, sniffer)
+    try:
+        sniffer.start_sniffing()
+        for probe in probes.values():
+            probe.poke()
+        time.sleep(config.interval_between_poke_and_peek)
+        sniffer.stop_sniffing()
+        for probe in probes.values():
+            probe.peek()
+    finally:
+        for probe in probes.values():
+            probe.close()
+    dump_packets(probes)
+    reports = {}
+    for name, probe in probes.items():
+        reports[name] = probe.report
+    return analyze_reports(reports, csv_writer)
 
 
 def dump_packets(probes):
@@ -53,30 +93,93 @@ def dump_packets(probes):
     for name, probe in probes.items():
         print('%s PROBE:' % name)
         for mark, packet in probe.report['PACKETS']:
-            formatted_packet = packet.sprintf('\t%.time% [' + mark + ']\n\t%IP.src% -> %IP.dst% %TCP.flags%')
+            formatted_packet = packet.sprintf(
+                '\t%.time% [' + mark + '] %IP.ttl% {TCP:%TCP.window% %TCP.flags%}{ICMP:%IP.src%}')
             print(formatted_packet)
 
 
-def analyze_reports(probes):
-    should_stop = False
-    if probes['DNS_WRONG_ANSWER'].report['WRONG_ANSWER']:
-        should_stop = True
-        print('dns wrong answer probe found router: %s' % (probes['DNS_WRONG_ANSWER'].report['ROUTER_IP'] or '*'))
-    router_ip = get_gfw_attached_router_ip_from_tcp_rst_probe(probes['HTTP_TCP_RST'])
+known_jamming_methods = ['DNS_WRONG_ANSWER', 'HTTP_TCP_RST', 'DNS_TCP_RST', 'TCP_PACKET_DROP', 'UDP_PACKET_DROP']
+
+def analyze_reports(reports, csv_writer):
+    probed_at = datetime.datetime.now().isoformat()
+    routers = {}
+    router_ip = get_gfw_attached_router_ip_from_dns_wrong_answer_probe_report(reports.get('DNS_WRONG_ANSWER'))
     if router_ip:
-        should_stop = True
-        print('http tcp rst probe found router: %s' % router_ip)
-    router_ip = get_gfw_attached_router_ip_from_tcp_rst_probe(probes['DNS_TCP_RST'])
+        routers.setdefault(router_ip, []).append('DNS_WRONG_ANSWER')
+    router_ip = get_gfw_attached_router_ip_from_tcp_rst_probe_report(reports.get('HTTP_TCP_RST'))
     if router_ip:
-        should_stop = True
-        print('dns tcp rst probe found router: %s' % router_ip)
-    return should_stop
+        routers.setdefault(router_ip, []).append('HTTP_TCP_RST')
+    router_ip = get_gfw_attached_router_ip_from_tcp_rst_probe_report(reports.get('DNS_TCP_RST'))
+    if router_ip:
+        routers.setdefault(router_ip, []).append('DNS_TCP_RST')
+    router_ip = get_gfw_attached_router_ip_from_packet_drop_probe_report(
+        reports.get('TCP_PACKET_DROP_BLOCKED'), reports.get('TCP_PACKET_DROP_COMPARISON'))
+    if router_ip:
+        routers.setdefault(router_ip, []).append('TCP_PACKET_DROP')
+    router_ip = get_gfw_attached_router_ip_from_packet_drop_probe_report(
+        reports.get('UDP_PACKET_DROP_BLOCKED'), reports.get('UDP_PACKET_DROP_COMPARISON'))
+    if router_ip:
+        routers.setdefault(router_ip, []).append('UDP_PACKET_DROP')
+    if config.debug:
+        print('routers', routers)
+    if routers:
+        for router_ip, jamming_methods in routers.items():
+            if '*' == router_ip:
+                continue
+            row = [probed_at, router_ip]
+            for jamming_method in known_jamming_methods:
+                if jamming_method in jamming_methods:
+                    row.append(jamming_method)
+                else:
+                    row.append('')
+            csv_writer.writerow(row)
+            print(row)
+        if not os.path.exists('packets'):
+            os.mkdir('packets')
+        packets_dir = os.path.join('packets', probed_at)
+        if not os.path.exists(packets_dir):
+            os.mkdir(packets_dir)
+        for name, report in reports.items():
+            packets = [packet for mark, packet in report['PACKETS']]
+            wrpcap(os.path.join(packets_dir, name), packets)
+        subprocess.call('tar -zcf %s.tar.gz %s' % (packets_dir, packets_dir), shell=True)
+        shutil.rmtree(packets_dir)
+        return False
+    return True
 
 
-def get_gfw_attached_router_ip_from_tcp_rst_probe(probe):
-    if probe.report['RST_AFTER_SYN?'] or probe.report['RST_AFTER_OFFENDING_PAYLOAD?']:
-        return probe.report['ROUTER_IP_FOUND_BY_SYN'] or\
-               probe.report['ROUTER_IP_FOUND_BY_OFFENDING_PAYLOAD'] or '*'
+def get_gfw_attached_router_ip_from_dns_wrong_answer_probe_report(report):
+    if not report:
+        return None
+    if report['WRONG_ANSWER']:
+        return report['ROUTER_IP'] or '*'
     return None
+
+
+def get_gfw_attached_router_ip_from_tcp_rst_probe_report(report):
+    if not report:
+        return None
+    if report['RST_AFTER_SYN?'] or report['RST_AFTER_OFFENDING_PAYLOAD?']:
+        return report['ROUTER_IP_FOUND_BY_SYN'] or\
+               report['ROUTER_IP_FOUND_BY_OFFENDING_PAYLOAD'] or '*'
+    return None
+
+
+def get_gfw_attached_router_ip_from_packet_drop_probe_report(report_blocked, report_comparison):
+    if not report_blocked or not report_comparison:
+        return None
+    router_ip_blocked = get_router_ip_found_by_packet_drop_probe_report(report_blocked)
+    router_ip_comparison = get_router_ip_found_by_packet_drop_probe_report(report_comparison)
+    if not router_ip_blocked and router_ip_comparison:
+        return router_ip_comparison
+    return None
+
+
+def get_router_ip_found_by_packet_drop_probe_report(report):
+    router_ip = report['ROUTER_IP_FOUND_BY_PACKET_1']
+    router_ip = router_ip or report['ROUTER_IP_FOUND_BY_PACKET_2']
+    router_ip = router_ip or report['ROUTER_IP_FOUND_BY_PACKET_3']
+    return router_ip
+
 
 main(*sys.argv[1:])
