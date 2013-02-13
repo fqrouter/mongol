@@ -8,7 +8,6 @@ from scapy.layers.inet import IP, UDP, UDPerror, IPerror
 from scapy.layers.dns import DNS, DNSQR
 
 MONGOL_SYS_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-print(MONGOL_SYS_PATH)
 if MONGOL_SYS_PATH not in sys.path:
     sys.path.append(MONGOL_SYS_PATH)
 from mongol import networking
@@ -152,6 +151,7 @@ class DnsWrongAnswerProbe(object):
                     return self.record_wrong_answer(answer, packet)
                 else:
                     return self.record_right_answer(answer, packet)
+        self.report['PACKETS'].append('UNKNOWN', packet)
 
     def analyze_udp_error_packet(self, packet):
         if self.sport != packet[UDPerror].sport:

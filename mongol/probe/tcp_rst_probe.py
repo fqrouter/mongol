@@ -77,7 +77,8 @@ def main(dst, ttl, offending_payload_type='HTTP'):
 
 
 class TcpRstProbe(object):
-    def __init__(self, src, sport, dst, dport, ttl, sniffer, offending_payload_type):
+    def __init__(self, src, sport, dst, dport, ttl, sniffer, offending_payload_type,
+                 interval_between_syn_and_offending_payload=0.5):
         self.src = src
         self.sport = sport
         self.dst = dst
@@ -85,6 +86,7 @@ class TcpRstProbe(object):
         self.ttl = ttl
         self.sniffer = sniffer
         self.offending_payload_type = offending_payload_type
+        self.interval_between_syn_and_offending_payload = interval_between_syn_and_offending_payload
         self.report = {
             'ROUTER_IP_FOUND_BY_SYN': None,
             'ROUTER_IP_FOUND_BY_OFFENDING_PAYLOAD': None,
@@ -97,7 +99,7 @@ class TcpRstProbe(object):
 
     def poke(self):
         self.send_syn()
-        time.sleep(0.5)
+        time.sleep(self.interval_between_syn_and_offending_payload)
         self.offending_payload_sent_at = time.time()
         self.send_offending_payload()
 

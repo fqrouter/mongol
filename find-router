@@ -1,0 +1,82 @@
+#!/usr/bin/env python
+import time
+import sys
+from mongol.probe import DnsWrongAnswerProbe
+from mongol.probe import TcpRstProbe
+from mongol import networking
+from mongol import config
+
+if len(sys.argv) == 1:
+    print('[usage] ./find-router destination-ip')
+    sys.exit(1)
+
+def main(dst):
+    if config.fixed_route:
+        networking.make_route_fixed(config.fixed_route[0], config.fixed_route[1])
+    iface, src, _ = networking.get_route(dst)
+    if config.debug:
+        print('probing between %s <=> %s, at interface %s' % (src, dst, iface))
+    for ttl in range(config.min_ttl, config.max_ttl + 1):
+        if config.debug:
+            print('')
+            print('=== ttl: %s ===' % ttl)
+        sniffer = networking.create_sniffer(iface, src, dst, config.sniffer_type)
+        probes = {
+            'DNS_WRONG_ANSWER': DnsWrongAnswerProbe(src, config.dns_wrong_answer_probe_sport,
+                dst, config.dns_wrong_answer_probe_dport, ttl, sniffer),
+            'HTTP_TCP_RST': TcpRstProbe(src, config.http_tcp_rst_probe_sport,
+                dst, config.http_tcp_rst_probe_dport, ttl, sniffer, offending_payload_type='HTTP',
+                interval_between_syn_and_offending_payload=config.interval_between_syn_and_http_get),
+            'DNS_TCP_RST': TcpRstProbe(src, config.dns_tcp_rst_probe_sport,
+                dst, config.dns_tcp_rst_probe_dport, ttl, sniffer, offending_payload_type='DNS',
+                interval_between_syn_and_offending_payload=config.interval_between_syn_and_dns_question)
+        }
+        try:
+            sniffer.start_sniffing()
+            for probe in probes.values():
+                probe.poke()
+            time.sleep(config.interval_between_poke_and_peek)
+            sniffer.stop_sniffing()
+            for probe in probes.values():
+                probe.peek()
+        finally:
+            for probe in probes.values():
+                probe.close()
+        dump_packets(probes)
+        if analyze_reports(probes):
+            return
+
+
+def dump_packets(probes):
+    if not config.debug:
+        return
+    for name, probe in probes.items():
+        print('%s PROBE:' % name)
+        for mark, packet in probe.report['PACKETS']:
+            formatted_packet = packet.sprintf('\t%.time% [' + mark + ']\n\t%IP.src% -> %IP.dst% %TCP.flags%')
+            print(formatted_packet)
+
+
+def analyze_reports(probes):
+    should_stop = False
+    if probes['DNS_WRONG_ANSWER'].report['WRONG_ANSWER']:
+        should_stop = True
+        print('dns wrong answer probe found router: %s' % (probes['DNS_WRONG_ANSWER'].report['ROUTER_IP'] or '*'))
+    router_ip = get_gfw_attached_router_ip_from_tcp_rst_probe(probes['HTTP_TCP_RST'])
+    if router_ip:
+        should_stop = True
+        print('http tcp rst probe found router: %s' % router_ip)
+    router_ip = get_gfw_attached_router_ip_from_tcp_rst_probe(probes['DNS_TCP_RST'])
+    if router_ip:
+        should_stop = True
+        print('dns tcp rst probe found router: %s' % router_ip)
+    return should_stop
+
+
+def get_gfw_attached_router_ip_from_tcp_rst_probe(probe):
+    if probe.report['RST_AFTER_SYN?'] or probe.report['RST_AFTER_OFFENDING_PAYLOAD?']:
+        return probe.report['ROUTER_IP_FOUND_BY_SYN'] or\
+               probe.report['ROUTER_IP_FOUND_BY_OFFENDING_PAYLOAD'] or '*'
+    return None
+
+main(*sys.argv[1:])
