@@ -25,15 +25,17 @@ def main(dst):
     iface, src, _ = networking.get_route(dst)
     if config.debug:
         print('probing between %s <=> %s, at interface %s' % (src, dst, iface))
+    probed_at = datetime.datetime.now().isoformat()
     with open('gfw-attached-routers.csv', 'a') as f:
         csv_writer = csv.writer(f)
         for ttl in range(config.min_ttl, config.max_ttl + 1):
-            should_continue = do_probing(iface, src, dst, ttl, csv_writer)
+            should_continue = do_probing(probed_at, iface, src, dst, ttl, csv_writer)
             if not should_continue:
-                return
+                break
+    shutil.rmtree(os.path.join('packets', probed_at))
 
 
-def do_probing(iface, src, dst, ttl, csv_writer):
+def do_probing(probed_at, iface, src, dst, ttl, csv_writer):
     if config.debug:
         print('')
         print('=== ttl: %s ===' % ttl)
@@ -84,7 +86,7 @@ def do_probing(iface, src, dst, ttl, csv_writer):
     reports = {}
     for name, probe in probes.items():
         reports[name] = probe.report
-    return analyze_reports(reports, csv_writer)
+    return analyze_reports(probed_at, reports, csv_writer)
 
 
 def dump_packets(probes):
@@ -100,8 +102,7 @@ def dump_packets(probes):
 
 known_jamming_methods = ['DNS_WRONG_ANSWER', 'HTTP_TCP_RST', 'DNS_TCP_RST', 'TCP_PACKET_DROP', 'UDP_PACKET_DROP']
 
-def analyze_reports(reports, csv_writer):
-    probed_at = datetime.datetime.now().isoformat()
+def analyze_reports(probed_at, reports, csv_writer):
     routers = {}
     router_ip = get_gfw_attached_router_ip_from_dns_wrong_answer_probe_report(reports.get('DNS_WRONG_ANSWER'))
     if router_ip:
@@ -122,6 +123,8 @@ def analyze_reports(reports, csv_writer):
         routers.setdefault(router_ip, []).append('UDP_PACKET_DROP')
     if config.debug:
         print('routers', routers)
+    packets_dir = os.path.join('packets', probed_at)
+    write_packets(packets_dir, reports)
     if routers:
         for router_ip, jamming_methods in routers.items():
             if '*' == router_ip:
@@ -134,18 +137,17 @@ def analyze_reports(reports, csv_writer):
                     row.append('')
             csv_writer.writerow(row)
             print(row)
-        if not os.path.exists('packets'):
-            os.mkdir('packets')
-        packets_dir = os.path.join('packets', probed_at)
-        if not os.path.exists(packets_dir):
-            os.mkdir(packets_dir)
-        for name, report in reports.items():
-            packets = [packet for mark, packet in report['PACKETS']]
-            wrpcap(os.path.join(packets_dir, name), packets)
         subprocess.call('tar -zcf %s.tar.gz %s' % (packets_dir, packets_dir), shell=True)
-        shutil.rmtree(packets_dir)
         return False
     return True
+
+
+def write_packets(packets_dir, reports):
+    if not os.path.exists(packets_dir):
+        os.makedirs(packets_dir)
+    for name, report in reports.items():
+        packets = [packet for mark, packet in report['PACKETS']]
+        wrpcap(os.path.join(packets_dir, name), packets, append=True)
 
 
 def get_gfw_attached_router_ip_from_dns_wrong_answer_probe_report(report):
