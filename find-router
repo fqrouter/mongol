@@ -86,7 +86,7 @@ def do_probing(probed_at, iface, src, dst, ttl, csv_writer):
     reports = {}
     for name, probe in probes.items():
         reports[name] = probe.report
-    return analyze_reports(probed_at, reports, csv_writer)
+    return analyze_reports(probed_at, dst, reports, csv_writer)
 
 
 def dump_packets(probes):
@@ -102,7 +102,7 @@ def dump_packets(probes):
 
 known_jamming_methods = ['DNS_WRONG_ANSWER', 'HTTP_TCP_RST', 'DNS_TCP_RST', 'TCP_PACKET_DROP', 'UDP_PACKET_DROP']
 
-def analyze_reports(probed_at, reports, csv_writer):
+def analyze_reports(probed_at, dst, reports, csv_writer):
     routers = {}
     router_ip = get_gfw_attached_router_ip_from_dns_wrong_answer_probe_report(reports.get('DNS_WRONG_ANSWER'))
     if router_ip:
@@ -129,7 +129,7 @@ def analyze_reports(probed_at, reports, csv_writer):
         for router_ip, jamming_methods in routers.items():
             if '*' == router_ip:
                 continue
-            row = [probed_at, router_ip]
+            row = [probed_at, dst, router_ip]
             for jamming_method in known_jamming_methods:
                 if jamming_method in jamming_methods:
                     row.append(jamming_method)

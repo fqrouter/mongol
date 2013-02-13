@@ -17,7 +17,6 @@ def main(target_country='CN', query_type='ip'):
             if target_country == country:
                 for i in range(int(asn_count)):
                     print(int(start_asn) + i)
-        print('') # end indicator
     else:
         assert 'ip' == query_type
         lines = [line for line in lines if '|ipv4|' in line]
@@ -25,6 +24,7 @@ def main(target_country='CN', query_type='ip'):
             _, country, _, start_ip, ip_count, _, _ = line.split('|')
             if target_country == country:
                 print(get_random_ip_in_range(start_ip, int(ip_count)))
+    print('') # end indicator
 
 
 def get_random_ip_in_range(start_ip, ip_count):

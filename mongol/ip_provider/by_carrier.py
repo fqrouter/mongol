@@ -22,8 +22,7 @@ def main(carrier, query_type='ip', whoise_server='whois.apnic.net'):
         else:
             assert 'ip' == query_type
             query_ip(line)
-    if 'asn' == query_type:
-        print('') # end indicator
+    print('') # end indicator
 
 
 def query_asn(line):
@@ -50,6 +49,7 @@ def query_ip(line):
 
 def query_whoise(server, query):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(15)
     try:
         s.connect((server, 43))
         s.send((query + '\r\n').encode())

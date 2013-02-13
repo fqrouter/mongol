@@ -8,7 +8,7 @@ from scapy.layers.inet import IP, IPerror
 from scapy.config import conf
 
 class L2Sniffer(threading.Thread):
-    def __init__(self, iface, src, dst, no_filter=False):
+    def __init__(self, iface, src, dst, no_filter=True):
         super(L2Sniffer, self).__init__()
         self.daemon = True
         self.no_filter = no_filter
@@ -34,7 +34,7 @@ class L2Sniffer(threading.Thread):
                         if self.should_stop:
                             return # no data and should stop => stop
                         continue
-                    packet = l2_listen_socket.recv()
+                    packet = l2_listen_socket.recv(2048)
                     if IP in packet:
                         packet = packet[IP]
                     else:

@@ -1,9 +1,10 @@
-sniffer_type = 'L3'
+sniffer_type = 'L2'
 min_ttl = 6
 max_ttl = 14
 debug = True
 fixed_route = None # ('venet0:0', 'a.b.c.d')
 interval_between_poke_and_peek = 2
+batch_size = 4
 dns_wrong_answer_probe = {
     'sport': 19841,
     'dport': 53
@@ -29,6 +30,14 @@ udp_packet_drop_probe = None
 #    'comparison_sport': 8081,
 #    'dport': 53
 #}
+ip_providers = [
+    'by_carrier.py CHINANET | limit.py 50',
+    'by_carrier.py CNCGROUP | limit.py 50',
+    'by_carrier.py CN-CMCC | limit.py 50',
+    'by_carrier.py CN-CRTC | limit.py 50',
+    'by_carrier.py CERNET-AP | limit.py 50',
+    'by_carrier.py CN-CSTNET | limit.py 50'
+]
 
 import os
 import sys

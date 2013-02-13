@@ -1,0 +1,62 @@
+#!/usr/bin/env python
+import subprocess
+import os
+from mongol import config
+
+IP_PROVIDER_PATH = os.path.join(os.path.dirname(__file__), 'mongol', 'ip_provider')
+
+def main():
+    all_destinations = list_all_destinations()
+    print('#all destinations: %s' % len(all_destinations))
+    probed_destinations = list_probed_destinations()
+    print('#probed destinations: %s' % len(probed_destinations))
+    destinations = list(all_destinations - probed_destinations)
+    for batch in make_batches(destinations, config.batch_size):
+        probe_procs = {}
+        for destination in batch:
+            print('probing %s...' % destination)
+            probe_proc = subprocess.Popen('./find-router %s' % destination, shell=True,
+                stderr=subprocess.PIPE, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+            probe_procs[destination] = probe_proc
+        for destination, probe_proc in probe_procs.items():
+            probe_proc.wait()
+            if probe_proc.returncode:
+                print('failed to probe %s' % destination)
+                print(probe_proc.stdout.read())
+                print(probe_proc.stderr.read())
+            else:
+                with open('probed-destinations.txt', 'a') as f:
+                    f.write('%s\n' % destination)
+
+
+def make_batches(iterable, n=1):
+# http://stackoverflow.com/a/8290508
+    l = len(iterable)
+    for ndx in range(0, l, n):
+        yield iterable[ndx:min(ndx + n, l)]
+
+
+def list_all_destinations():
+    if not os.path.exists('all-destinations.txt'):
+        with open('all-destinations.txt', 'a') as f:
+            for ip_provider in config.ip_providers:
+                env = os.environ.copy()
+                env['PATH'] = '%s:%s' % (IP_PROVIDER_PATH, env['PATH'])
+                print('download destinations by: %s' % ip_provider)
+                download_proc = subprocess.Popen(ip_provider, shell=True, env=env,
+                    stderr=subprocess.PIPE, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+                download_proc.wait()
+                if download_proc.returncode:
+                    raise Exception('failed to download destinations')
+                f.write(download_proc.stdout.read())
+    with open('all-destinations.txt') as f:
+        return set([ip.strip() for ip in f.readlines()[:-1]]) # last line is end indicator
+
+
+def list_probed_destinations():
+    if os.path.exists('probed-destinations.txt'):
+        with open('probed-destinations.txt') as f:
+            return set([ip.strip() for ip in f.readlines()])
+    return set()
+
+main()
