@@ -1,5 +1,3 @@
 .idea
 *.pyc
-*.txt
-*.csv
-*.tar.gz
+var/*

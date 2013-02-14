@@ -25,7 +25,7 @@ def main():
                 print(probe_proc.stdout.read())
                 print(probe_proc.stderr.read())
             else:
-                with open('probed-destinations.txt', 'a') as f:
+                with open(os.path.join(config.output_dir, 'probed-destinations.txt'), 'a') as f:
                     f.write('%s\n' % destination)
 
 
@@ -38,7 +38,7 @@ def make_batches(iterable, n=1):
 
 def list_all_destinations():
     if not os.path.exists('all-destinations.txt'):
-        with open('all-destinations.txt', 'a') as f:
+        with open(os.path.join(config.output_dir, 'all-destinations.txt'), 'a') as f:
             for ip_provider in config.ip_providers:
                 env = os.environ.copy()
                 env['PATH'] = '%s:%s' % (IP_PROVIDER_PATH, env['PATH'])
@@ -49,13 +49,13 @@ def list_all_destinations():
                 if download_proc.returncode:
                     raise Exception('failed to download destinations')
                 f.write(download_proc.stdout.read())
-    with open('all-destinations.txt') as f:
+    with open(os.path.join(config.output_dir, 'all-destinations.txt')) as f:
         return set([ip.strip() for ip in f.readlines()[:-1]]) # last line is end indicator
 
 
 def list_probed_destinations():
     if os.path.exists('probed-destinations.txt'):
-        with open('probed-destinations.txt') as f:
+        with open(os.path.join(config.output_dir, 'probed-destinations.txt')) as f:
             return set([ip.strip() for ip in f.readlines()])
     return set()
 
