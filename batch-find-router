@@ -48,9 +48,9 @@ def list_all_destinations():
                 download_proc.wait()
                 if download_proc.returncode:
                     raise Exception('failed to download destinations')
-                f.write(download_proc.stdout.read())
+                f.write(''.join(download_proc.stdout.readlines()[:-1]))
     with open(os.path.join(config.output_dir, 'all-destinations.txt')) as f:
-        return set([ip.strip() for ip in f.readlines()[:-1]]) # last line is end indicator
+        return set([ip.strip() for ip in f.readlines()]) # last line is end indicator
 
 
 def list_probed_destinations():
