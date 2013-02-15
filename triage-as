@@ -1,0 +1,35 @@
+#!/usr/bin/env python
+import os
+import csv
+import math
+import struct
+import socket
+from mongol import config
+
+csv_writers = {}
+
+def main():
+    with open(os.path.join(config.output_dir, 'as.csv')) as f:
+        for row in csv.reader(f):
+            if 4 != len(row):
+                continue
+            as_number, carrier, start_ip, netmask = row
+            start_ip_bytes, end_ip_bytes = get_ip_range(start_ip, netmask)
+            get_csv_writer(carrier).writerow([as_number, str(start_ip_bytes), str(end_ip_bytes)])
+
+
+def get_ip_range(start_ip, netmask):
+# http://dregsoft.com/blog/?p=24
+    ip_count = int(math.pow(2, 32 - int(netmask)))
+    start_ip_bytes = struct.unpack('!i', socket.inet_aton(start_ip))[0]
+    return start_ip_bytes, start_ip_bytes + ip_count
+
+
+def get_csv_writer(carrier):
+    if carrier not in csv_writers:
+        f = open(os.path.join(config.output_dir, '%s.csv' % carrier), 'w')
+        csv_writers[carrier] = csv.writer(f)
+    return csv_writers[carrier]
+
+
+main()
