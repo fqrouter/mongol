@@ -1,0 +1,38 @@
+#!/usr/bin/env python
+import re
+import urllib2
+import sys
+import csv
+import os
+from mongol import config
+
+RE_MNT_BY = re.compile(r'mnt\-by:\s+MAINT\-(.+)', re.IGNORECASE | re.MULTILINE)
+RE_IP_RANGE = re.compile(r'([0-9]+(?:\.[0-9]+){3})/([0-9]+)')
+
+def main(as_number):
+    urllib2.socket.setdefaulttimeout(10)
+    request = urllib2.Request('http://bgp.he.net/AS%s' % as_number)
+    request.add_header('User-Agent',
+        'Mozilla/5.0 (Windows; U; Windows NT 5.1; zh-CN; rv:1.8.1.14) Gecko/20080404 (FoxPlus) Firefox/2.0.0.14')
+    response = urllib2.urlopen(request).read()
+    pos = response.find('aut-num')
+    if -1 == pos:
+        sys.exit(2)
+    match = RE_MNT_BY.search(response, pos)
+    if not match:
+        sys.exit(2)
+    carrier = match.group(1)
+    ip_ranges = RE_IP_RANGE.findall(response)
+    with open(os.path.join(config.output_dir, 'as.csv'), 'a') as f:
+        csv_writer = csv.writer(f)
+        for start_ip, netmask in ip_ranges:
+            if 0 == int(netmask):
+                continue
+            csv_writer.writerow([as_number, carrier, start_ip, netmask])
+
+
+if 1 == len(sys.argv):
+    print('[Usage] ./dump_asn.py as_number')
+    sys.exit(3)
+else:
+    main(*sys.argv[1:])

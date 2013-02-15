@@ -44,6 +44,9 @@ ip_providers = [
     'by_carrier.py CERNET-AP | limit.py 50',
     'by_carrier.py CN-CSTNET | limit.py 50'
 ]
+as_providers = [
+    'by_country.py CN asn'
+]
 
 import os
 import sys

@@ -1,0 +1,65 @@
+#!/usr/bin/env python
+import os
+import subprocess
+from mongol import config
+
+IP_PROVIDER_PATH = os.path.join(os.path.dirname(__file__), 'mongol', 'ip_provider')
+ALL_AS_NUMBERS_PATH = os.path.join(config.output_dir, 'all-as-numbers.txt')
+DUMPED_AS_NUMBERS_PATH = os.path.join(config.output_dir, 'dumped-as-numbers.txt')
+
+def main():
+    all_as_numbers = list_all_as_numbers()
+    print('#all as numbers: %s' % len(all_as_numbers))
+    dumped_as_numbers = list_dumped_as_numbers()
+    print('#dumped as numbers: %s' % len(dumped_as_numbers))
+    as_numbers = list(all_as_numbers - dumped_as_numbers)
+    for batch in make_batches(as_numbers, config.batch_size):
+        dump_procs = {}
+        for as_number in batch:
+            print('dumping %s...' % as_number)
+            dump_proc = subprocess.Popen('./dump-as %s' % as_number, shell=True,
+                stderr=subprocess.PIPE, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+            dump_procs[as_number] = dump_proc
+        for as_number, dump_proc in dump_procs.items():
+            dump_proc.wait()
+            if dump_proc.returncode:
+                print('failed to dump %s' % as_number)
+                print(dump_proc.stdout.read())
+                print(dump_proc.stderr.read())
+            else:
+                with open(DUMPED_AS_NUMBERS_PATH, 'a') as f:
+                    f.write('%s\n' % as_number)
+    print('done.')
+
+
+def make_batches(iterable, n=1):
+# http://stackoverflow.com/a/8290508
+    l = len(iterable)
+    for ndx in range(0, l, n):
+        yield iterable[ndx:min(ndx + n, l)]
+
+
+def list_all_as_numbers():
+    if not os.path.exists(ALL_AS_NUMBERS_PATH):
+        with open(ALL_AS_NUMBERS_PATH, 'a') as f:
+            for as_provider in config.as_providers:
+                env = os.environ.copy()
+                env['PATH'] = '%s:%s' % (IP_PROVIDER_PATH, env['PATH'])
+                print('download as numbers by: %s' % as_provider)
+                download_proc = subprocess.Popen(as_provider, shell=True, env=env,
+                    stderr=subprocess.PIPE, stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+                download_proc.wait()
+                if download_proc.returncode:
+                    raise Exception('failed to download destinations')
+                f.write(''.join(download_proc.stdout.readlines()[:-1]))
+    with open(ALL_AS_NUMBERS_PATH) as f:
+        return set([as_number.strip() for as_number in f.readlines()]) # last line is end indicator
+
+
+def list_dumped_as_numbers():
+    if os.path.exists(DUMPED_AS_NUMBERS_PATH):
+        with open(DUMPED_AS_NUMBERS_PATH) as f:
+            return set([as_number.strip() for as_number in f.readlines()])
+    return set()
+
+main()

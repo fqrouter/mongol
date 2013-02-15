@@ -3,7 +3,9 @@ import subprocess
 import os
 from mongol import config
 
+ALL_DESTINATIONS_PATH = os.path.join(config.output_dir, 'all-destinations.txt')
 IP_PROVIDER_PATH = os.path.join(os.path.dirname(__file__), 'mongol', 'ip_provider')
+PROBED_DESTINATIONS_PATH = os.path.join(config.output_dir, 'probed-destinations.txt')
 
 def main():
     all_destinations = list_all_destinations()
@@ -25,8 +27,9 @@ def main():
                 print(probe_proc.stdout.read())
                 print(probe_proc.stderr.read())
             else:
-                with open(os.path.join(config.output_dir, 'probed-destinations.txt'), 'a') as f:
+                with open(PROBED_DESTINATIONS_PATH, 'a') as f:
                     f.write('%s\n' % destination)
+    print('done.')
 
 
 def make_batches(iterable, n=1):
@@ -37,8 +40,8 @@ def make_batches(iterable, n=1):
 
 
 def list_all_destinations():
-    if not os.path.exists('all-destinations.txt'):
-        with open(os.path.join(config.output_dir, 'all-destinations.txt'), 'a') as f:
+    if not os.path.exists(ALL_DESTINATIONS_PATH):
+        with open(ALL_DESTINATIONS_PATH, 'a') as f:
             for ip_provider in config.ip_providers:
                 env = os.environ.copy()
                 env['PATH'] = '%s:%s' % (IP_PROVIDER_PATH, env['PATH'])
@@ -49,13 +52,13 @@ def list_all_destinations():
                 if download_proc.returncode:
                     raise Exception('failed to download destinations')
                 f.write(''.join(download_proc.stdout.readlines()[:-1]))
-    with open(os.path.join(config.output_dir, 'all-destinations.txt')) as f:
+    with open(ALL_DESTINATIONS_PATH) as f:
         return set([ip.strip() for ip in f.readlines()]) # last line is end indicator
 
 
 def list_probed_destinations():
-    if os.path.exists('probed-destinations.txt'):
-        with open(os.path.join(config.output_dir, 'probed-destinations.txt')) as f:
+    if os.path.exists(PROBED_DESTINATIONS_PATH):
+        with open(PROBED_DESTINATIONS_PATH) as f:
             return set([ip.strip() for ip in f.readlines()])
     return set()
 
