@@ -79,17 +79,17 @@ def do_probing(probed_at, iface, src, dst, ttl, found_jamming_methods):
     if 'TCP_PACKET_DROP' not in found_jamming_methods and config.tcp_packet_drop_probe:
         probes['TCP_PACKET_DROP_BLOCKED'] = TcpPacketDropProbe(
             src, config.tcp_packet_drop_probe['blocked_sport'],
-            dst, config.tcp_packet_drop_probe['dport'], ttl, sniffer)
+            dst, config.tcp_packet_drop_probe['blocked_dport'], ttl, sniffer)
         probes['TCP_PACKET_DROP_COMPARISON'] = TcpPacketDropProbe(
             src, config.tcp_packet_drop_probe['comparison_sport'],
-            dst, config.tcp_packet_drop_probe['dport'], ttl, sniffer)
+            dst, config.tcp_packet_drop_probe['comparison_dport'], ttl, sniffer)
     if 'UDP_PACKET_DROP' not in found_jamming_methods and config.udp_packet_drop_probe:
         probes['UDP_PACKET_DROP_BLOCKED'] = UdpPacketDropProbe(
             src, config.udp_packet_drop_probe['blocked_sport'],
-            dst, config.udp_packet_drop_probe['dport'], ttl, sniffer)
+            dst, config.udp_packet_drop_probe['blocked_dport'], ttl, sniffer)
         probes['UDP_PACKET_DROP_COMPARISON'] = UdpPacketDropProbe(
             src, config.udp_packet_drop_probe['comparison_sport'],
-            dst, config.udp_packet_drop_probe['dport'], ttl, sniffer)
+            dst, config.udp_packet_drop_probe['comparison_dport'], ttl, sniffer)
     try:
         sniffer.start_sniffing()
         for probe in probes.values():

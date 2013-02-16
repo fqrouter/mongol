@@ -24,17 +24,25 @@ dns_tcp_rst_probe = {
 }
 tcp_packet_drop_probe = None
 # uncomment below if you have tcp port being blocked by GFW
+# if dport is blocked, set the sport to the same
+# if sport is blocked, set the dport to the same
+# example below demonstrated the case which sport 8080 is blocked
 #tcp_packet_drop_probe = {
 #    'blocked_sport': 8080,
 #    'comparison_sport': 8081,
-#    'dport': 1234
+#    'blocked_dport': 1234,
+#    'comparison_dport': 1234
 #}
 udp_packet_drop_probe = None
 # uncomment below if you have udp port being blocked by GFW
+# if dport is blocked, set the sport to the same
+# if sport is blocked, set the dport to the same
+# example below demonstrated the case which sport 8080 is blocked
 #udp_packet_drop_probe = {
 #    'blocked_sport': 8080,
 #    'comparison_sport': 8081,
-#    'dport': 53
+#    'blocked_dport': 53,
+#    'comparison_dport': 53
 #}
 ip_providers = [
     'by_carrier.py CHINANET | limit.py 50',
