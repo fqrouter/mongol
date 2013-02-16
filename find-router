@@ -47,7 +47,7 @@ def main(dst):
     with open(os.path.join(config.output_dir, 'open-routes.csv'), 'a') as f:
         csv_writer = csv.writer(f)
         for missing_jamming_method in (ALL_JAMMING_METHODS - found_jamming_methods):
-            csv_writer([probed_at, missing_jamming_method, dst])
+            csv_writer.writerow([probed_at, missing_jamming_method, dst])
     packets_dir = get_packets_dir(probed_at)
     if found_jamming_methods:
         subprocess.call('tar -zcf %s.tar.gz %s' % (packets_dir, packets_dir), shell=True)
@@ -191,9 +191,7 @@ def get_route_type(report_aa, report_ab, report_ba):
     ip_ab = get_router_ip_found_by_packet_drop_probe_report(report_ab)
     ip_ba = get_router_ip_found_by_packet_drop_probe_report(report_ba)
     if any([ip_aa is None, ip_ab is None, ip_ba is None]):
-        if all([ip_aa is None, ip_ab is None, ip_ba is None]):
-            return 'ROUTE_UNKNOWN'
-        raise Exception('failed to detect tcp route type, please change sport or dport')
+        return 'ROUTE_UNKNOWN'
     is_dport_dependent = ip_aa != ip_ab
     is_sport_dependent = ip_aa != ip_ba
     if is_dport_dependent and is_sport_dependent:
