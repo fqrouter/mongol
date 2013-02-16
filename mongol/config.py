@@ -1,13 +1,30 @@
-sniffer_type = 'L2' # can be L3 or Tcpdump, but L2 is working more reliable
-min_ttl = 4
-max_ttl = 14
+sniffer_type = 'L2' # can be L3 or Tcpdump, but L2 is working more reliably
+min_ttl = 3
+max_ttl = 20
 debug = True
 fixed_route = None
-# uncomment below if you have broken routing table which caused the detected outgoing ip or interface is wrong
+# uncomment below if you have a broken routing table
+# which caused the detected outgoing ip or interface is wrong
 #fixed_route = ('venet0:0', 'a.b.c.d')
 interval_between_poke_and_peek = 2
 batch_size = 4
 output_dir = 'var'
+# tcp_route_probe must not be None
+# it is used to test if route changes when sport/dport changed
+tcp_route_probe = {
+    'a_sport': 9264,
+    'b_sport': 8375,
+    'a_dport': 7486,
+    'b_dport': 6597
+}
+# udp_route_probe must not be None
+# it is used to test if route changes when sport/dport changed
+udp_route_probe = {
+    'a_sport': 9264,
+    'b_sport': 8375,
+    'a_dport': 7486,
+    'b_dport': 6597
+}
 dns_wrong_answer_probe = {
     'sport': 19841,
     'dport': 53
@@ -44,6 +61,9 @@ udp_packet_drop_probe = None
 #    'blocked_dport': 53,
 #    'comparison_dport': 53
 #}
+# config below works whne you probe from abroad to China
+# if you want to probe from China to abroad, change the settings below
+# to provide abroad ip
 ip_providers = [
     'by_carrier.py CHINANET | limit.py 50',
     'by_carrier.py CNCGROUP | limit.py 50',
