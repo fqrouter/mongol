@@ -42,19 +42,24 @@ from mongol import networking
 # Also based on the ICMP packet we can tell the ip address of router attached GFW.
 
 ERROR_CONNECTION_RESET = 104
+ERROR_NO_DATA = 11
 TH_SYN = 0x02        # synchronize sequence numbers
 TH_RST = 0x04        # reset connection
 TH_ACK = 0x10        # acknowledgment number set
 SPORT = 19840
 HTTP_DPORT = 80
 DNS_DPORT = 53
+SMTP_DPORT = 25
 ROOT_USER_ID = 0
 
 
 def main(dst, ttl, probe_type_code='HTTP'):
     probe_types = {
         'HTTP': HttpTcpRstProbe,
-        'DNS': DnsTcpRstProbe
+        'DNS': DnsTcpRstProbe,
+        'SMTP_HELO_RCPT_TO': SmtpHeloRcptToTcpRstProbe,
+        'SMTP_MAIL_FROM': SmtpMailFromTcpRstProbe,
+        'SMTP_RCPT_TO': SmtpRcptToTcpRstProbe
     }
     probe_type = probe_types[probe_type_code]
     iface, src, _ = networking.get_route(dst)
@@ -89,15 +94,19 @@ class TcpRstProbe(object):
         self.ttl = ttl
         self.sniffer = sniffer
         self.interval_between_syn_and_offending_payload = interval_between_syn_and_offending_payload
-        self.report = {
+        self.report = self.initialize_report({
             'ROUTER_IP_FOUND_BY_SYN': None,
             'ROUTER_IP_FOUND_BY_OFFENDING_PAYLOAD': None,
             'SYN_ACK?': None,
             'RST_AFTER_SYN?': None,
             'RST_AFTER_OFFENDING_PAYLOAD?': None,
             'PACKETS': []
-        }
+        })
         self.tcp_socket = None
+
+    @classmethod
+    def initialize_report(cls, report):
+        return report
 
     def poke(self):
         self.send_syn()
@@ -151,11 +160,15 @@ class TcpRstProbe(object):
             return self.report
         else:
             if not self.report['RST_AFTER_SYN?']:
+                self.tcp_socket.settimeout(0)
                 try:
+                    self.tcp_socket.recv(1024)
                     self.tcp_socket.recv(1024)
                 except socket.error as e:
                     if ERROR_CONNECTION_RESET == e[0]:
                         self.report['RST_AFTER_OFFENDING_PAYLOAD?'] = True
+                    elif ERROR_NO_DATA == e[0]:
+                        pass
                     else:
                         raise
             return self.report
@@ -173,7 +186,7 @@ class TcpRstProbe(object):
             else:
                 self.record_rst_after_offending_payload(packet)
         else:
-            self.report['PACKETS'].append(('UNKNOWN', packet))
+            self.report['PACKETS'].append((self.handle_unknown_packet('UNKNOWN'), packet))
 
     def analyze_tcp_error_packet(self, packet):
         if self.sport != packet[TCPerror].sport:
@@ -185,8 +198,10 @@ class TcpRstProbe(object):
         elif self.ttl * 10 + 2 == packet[IPerror].id:
             self.record_router_ip_found_by_offending_payload(packet.src, packet)
         else:
-            self.report['PACKETS'].append(('UNKNOWN', packet))
+            self.report['PACKETS'].append((self.handle_unknown_packet('UNKNOWN'), packet))
 
+    def handle_unknown_packet(self, packet):
+        return 'UNKNOWN'
 
     def record_syn_ack(self, packet):
         if self.report['SYN_ACK?']:
@@ -225,22 +240,87 @@ class TcpRstProbe(object):
 
 
 class HttpTcpRstProbe(TcpRstProbe):
+    @classmethod
+    def get_default_dport(cls):
+        return HTTP_DPORT
+
     def get_offending_payload(self):
         return 'GET / HTTP/1.1\r\nHost: www.facebook.com\r\n\r\n'
 
-    @classmethod
-    def get_default_dport(cls):
-        return 80
-
 
 class DnsTcpRstProbe(TcpRstProbe):
+    @classmethod
+    def get_default_dport(cls):
+        return DNS_DPORT
+
     def get_offending_payload(self):
         offending_payload = str(DNS(rd=1, qd=DNSQR(qname="dl.dropbox.com")))
         return struct.pack("!H", len(offending_payload)) + offending_payload
 
+
+class ThreePacketTcpRstProbe(TcpRstProbe):
+# SYN, OFFENDING_PAYLOAD_1, OFFENDING_PAYLOAD_2
     @classmethod
     def get_default_dport(cls):
-        return 53
+        return SMTP_DPORT
+
+    def send_offending_payload(self):
+        if self.sniffer:
+            packet = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 2, ttl=self.ttl) / TCP(sport=self.sport,
+                dport=self.dport, flags='A', seq=1, ack=100)
+            networking.send(packet)
+            self.report['PACKETS'].append(('OFFENDING_PAYLOAD_1', packet))
+            packet = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 3, ttl=self.ttl) / TCP(sport=self.sport,
+                dport=self.dport, flags='A', seq=1, ack=100) / self.get_offending_payload()
+            networking.send(packet)
+            self.report['PACKETS'].append(('OFFENDING_PAYLOAD_2', packet))
+        else:
+            self.tcp_socket.setsockopt(socket.SOL_IP, socket.IP_TTL, self.ttl)
+            try:
+                self.tcp_socket.send(self.get_offending_payload())
+            except socket.error as e:
+                if ERROR_CONNECTION_RESET == e[0]:
+                    self.report['RST_AFTER_SYN?'] = True
+                else:
+                    raise
+
+    def handle_unknown_packet(self, packet):
+        if IPerror in packet and self.ttl * 10 + 3 == packet[IPerror].id:
+            if self.report['ROUTER_IP_FOUND_BY_OFFENDING_PAYLOAD_2']:
+                return 'ADDITIONAL_ROUTER_IP_FOUND_BY_OFFENDING_PAYLOAD_2'
+            else:
+                self.report['ROUTER_IP_FOUND_BY_OFFENDING_PAYLOAD_2'] = packet.src
+                return 'ROUTER_IP_FOUND_BY_OFFENDING_PAYLOAD_2'
+        return super(ThreePacketTcpRstProbe, self).handle_unknown_packet(packet)
+
+
+class SmtpMailFromTcpRstProbe(ThreePacketTcpRstProbe):
+    def get_offending_payload(self):
+        return 'MAIL FROM: xiazai@upup.info\r\n'
+
+
+class SmtpRcptToTcpRstProbe(ThreePacketTcpRstProbe):
+    def get_offending_payload(self):
+        return 'RCPT TO: xiazai@upup.info\r\n'
+
+
+class SmtpHeloRcptToTcpRstProbe(TcpRstProbe):
+    @classmethod
+    def get_default_dport(cls):
+        return SMTP_DPORT
+
+    @classmethod
+    def initialize_report(cls, report):
+        return dict(report, USER_NOT_LOCAL_ERROR=None)
+
+    def get_offending_payload(self):
+        return 'HELO 163.com\r\nRCPT TO: xiazai@upup.info\r\n'
+
+    def handle_unknown_packet(self, packet):
+        if TCP in packet and '551 User not local; please try <forward-path>\r\n' == packet[TCP].payload:
+            self.report['USER_NOT_LOCAL_ERROR'] = True
+            return 'USER_NOT_LOCAL_ERROR'
+        return super(SmtpHeloRcptToTcpRstProbe, self).handle_unknown_packet(packet)
 
 
 if '__main__' == __name__:
