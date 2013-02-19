@@ -64,13 +64,14 @@ def main(dst, sport, ttl):
 
 
 class UdpPacketDropProbe(object):
-    def __init__(self, src, sport, dst, dport, ttl, sniffer):
+    def __init__(self, src, sport, dst, dport, ttl, sniffer, one_packet_only=False):
         self.src = src
         self.sport = sport
         self.dst = dst
         self.dport = dport
         self.ttl = ttl
         self.sniffer = sniffer
+        self.one_packet_only = one_packet_only
         self.report = {
             'ROUTER_IP_FOUND_BY_PACKET_1': None,
             'ROUTER_IP_FOUND_BY_PACKET_2': None,
@@ -83,18 +84,19 @@ class UdpPacketDropProbe(object):
     def poke(self):
         question = DNS(rd=1, qd=DNSQR(qname='www.gov.cn'))
         if self.sniffer:
-            syn1 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 1, ttl=self.ttl) / UDP(
+            packet1 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 1, ttl=self.ttl) / UDP(
                 sport=self.sport, dport=self.dport) / question
-            networking.send(syn1)
-            self.report['PACKETS'].append(('PACKET_1', syn1))
-            syn2 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 2, ttl=self.ttl) / UDP(
-                sport=self.sport, dport=self.dport) / question
-            networking.send(syn2)
-            self.report['PACKETS'].append(('PACKET_2', syn2))
-            syn3 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 3, ttl=self.ttl) / UDP(
-                sport=self.sport, dport=self.dport) / question
-            networking.send(syn3)
-            self.report['PACKETS'].append(('PACKET_3', syn3))
+            networking.send(packet1)
+            self.report['PACKETS'].append(('PACKET_1', packet1))
+            if not self.one_packet_only:
+                packet2 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 2, ttl=self.ttl) / UDP(
+                    sport=self.sport, dport=self.dport) / question
+                networking.send(packet2)
+                self.report['PACKETS'].append(('PACKET_2', packet2))
+                packet3 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 3, ttl=self.ttl) / UDP(
+                    sport=self.sport, dport=self.dport) / question
+                networking.send(packet3)
+                self.report['PACKETS'].append(('PACKET_3', packet3))
         else:
             self.udp_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
             atexit.register(self.udp_socket.close)

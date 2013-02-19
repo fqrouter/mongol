@@ -63,13 +63,14 @@ def main(dst, sport, ttl):
 
 
 class TcpPacketDropProbe(object):
-    def __init__(self, src, sport, dst, dport, ttl, sniffer):
+    def __init__(self, src, sport, dst, dport, ttl, sniffer, one_packet_only=False):
         self.src = src
         self.sport = sport
         self.dst = dst
         self.dport = dport
         self.ttl = ttl
         self.sniffer = sniffer
+        self.one_packet_only = one_packet_only
         self.report = {
             'ROUTER_IP_FOUND_BY_PACKET_1': None,
             'ROUTER_IP_FOUND_BY_PACKET_2': None,
@@ -81,18 +82,19 @@ class TcpPacketDropProbe(object):
 
     def poke(self):
         if self.sniffer:
-            syn1 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 1, ttl=self.ttl) / TCP(
+            packet1 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 1, ttl=self.ttl) / TCP(
                 sport=self.sport, dport=self.dport, flags='S', seq=0)
-            networking.send(syn1)
-            self.report['PACKETS'].append(('PACKET_1', syn1))
-            syn2 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 2, ttl=self.ttl) / TCP(
-                sport=self.sport, dport=self.dport, flags='S', seq=0)
-            networking.send(syn2)
-            self.report['PACKETS'].append(('PACKET_2', syn2))
-            syn3 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 3, ttl=self.ttl) / TCP(
-                sport=self.sport, dport=self.dport, flags='S', seq=0)
-            networking.send(syn3)
-            self.report['PACKETS'].append(('PACKET_3', syn3))
+            networking.send(packet1)
+            self.report['PACKETS'].append(('PACKET_1', packet1))
+            if not self.one_packet_only:
+                packet2 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 2, ttl=self.ttl) / TCP(
+                    sport=self.sport, dport=self.dport, flags='S', seq=0)
+                networking.send(packet2)
+                self.report['PACKETS'].append(('PACKET_2', packet2))
+                packet3 = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 3, ttl=self.ttl) / TCP(
+                    sport=self.sport, dport=self.dport, flags='S', seq=0)
+                networking.send(packet3)
+                self.report['PACKETS'].append(('PACKET_3', packet3))
         else:
             self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             atexit.register(networking.immediately_close_tcp_socket_so_sport_can_be_reused, self.tcp_socket)

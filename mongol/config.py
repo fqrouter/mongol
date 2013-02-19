@@ -14,16 +14,20 @@ output_dir = 'var'
 tcp_route_probe = {
     'a_sport': 9264,
     'b_sport': 8375,
-    'a_dport': 7486,
-    'b_dport': 6597
+    'c_sport': 7486,
+    'a_dport': 6597,
+    'b_dport': 5618,
+    'c_dport': 4729
 }
 # udp_route_probe must not be None
 # it is used to test if route changes when sport/dport changed
 udp_route_probe = {
     'a_sport': 9264,
     'b_sport': 8375,
-    'a_dport': 7486,
-    'b_dport': 6597
+    'c_sport': 7486,
+    'a_dport': 6597,
+    'b_dport': 5618,
+    'c_dport': 4729
 }
 dns_wrong_answer_probe = {
     'sport': 19841,

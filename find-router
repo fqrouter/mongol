@@ -66,28 +66,44 @@ def do_probing(probed_at, iface, src, dst, ttl, found_jamming_methods):
         print('=== ttl: %s ===' % ttl)
     sniffer = networking.create_sniffer(iface, src, dst, config.sniffer_type)
     probes = {
-        'UDP_ROUTE_PROBE_AA': UdpPacketDropProbe(
+        'UDP_ROUTE_AA': UdpPacketDropProbe(
             src, config.udp_route_probe['a_sport'],
             dst, config.udp_route_probe['a_dport'],
-            ttl, sniffer),
-        'UDP_ROUTE_PROBE_AB': UdpPacketDropProbe(
+            ttl, sniffer, ),
+        'UDP_ROUTE_AB': UdpPacketDropProbe(
             src, config.udp_route_probe['a_sport'],
             dst, config.udp_route_probe['b_dport'],
             ttl, sniffer),
-        'UDP_ROUTE_PROBE_BA': UdpPacketDropProbe(
+        'UDP_ROUTE_AC': UdpPacketDropProbe(
+            src, config.udp_route_probe['a_sport'],
+            dst, config.udp_route_probe['c_dport'],
+            ttl, sniffer),
+        'UDP_ROUTE_BA': UdpPacketDropProbe(
             src, config.udp_route_probe['b_sport'],
             dst, config.udp_route_probe['a_dport'],
             ttl, sniffer),
-        'TCP_ROUTE_PROBE_AA': TcpPacketDropProbe(
+        'UDP_ROUTE_CA': UdpPacketDropProbe(
+            src, config.udp_route_probe['c_sport'],
+            dst, config.udp_route_probe['a_dport'],
+            ttl, sniffer),
+        'TCP_ROUTE_AA': TcpPacketDropProbe(
             src, config.tcp_route_probe['a_sport'],
             dst, config.tcp_route_probe['a_dport'],
             ttl, sniffer),
-        'TCP_ROUTE_PROBE_AB': TcpPacketDropProbe(
+        'TCP_ROUTE_AB': TcpPacketDropProbe(
             src, config.tcp_route_probe['a_sport'],
             dst, config.tcp_route_probe['b_dport'],
             ttl, sniffer),
-        'TCP_ROUTE_PROBE_BA': TcpPacketDropProbe(
+        'TCP_ROUTE_AC': TcpPacketDropProbe(
+            src, config.tcp_route_probe['a_sport'],
+            dst, config.tcp_route_probe['c_dport'],
+            ttl, sniffer),
+        'TCP_ROUTE_BA': TcpPacketDropProbe(
             src, config.tcp_route_probe['b_sport'],
+            dst, config.tcp_route_probe['a_dport'],
+            ttl, sniffer),
+        'TCP_ROUTE_CA': TcpPacketDropProbe(
+            src, config.tcp_route_probe['c_sport'],
             dst, config.tcp_route_probe['a_dport'],
             ttl, sniffer)
     }
@@ -165,9 +181,11 @@ def dump_packets(probes):
 def analyze_reports(reports):
     jamming_events = {}
     udp_route_type = get_route_type(
-        reports['UDP_ROUTE_PROBE_AA'], reports['UDP_ROUTE_PROBE_AB'], reports['UDP_ROUTE_PROBE_BA'])
+        reports['UDP_ROUTE_AA'], reports['UDP_ROUTE_AB'], reports['UDP_ROUTE_AC'],
+        reports['UDP_ROUTE_BA'], reports['UDP_ROUTE_CA'])
     tcp_route_type = get_route_type(
-        reports['TCP_ROUTE_PROBE_AA'], reports['TCP_ROUTE_PROBE_AB'], reports['TCP_ROUTE_PROBE_BA'])
+        reports['TCP_ROUTE_AA'], reports['TCP_ROUTE_AB'], reports['TCP_ROUTE_AC'],
+        reports['TCP_ROUTE_BA'], reports['TCP_ROUTE_CA'])
     router_ip = get_gfw_attached_router_ip_from_dns_wrong_answer_probe_report(reports.get('DNS_WRONG_ANSWER'))
     if router_ip:
         jamming_events['DNS_WRONG_ANSWER'] = router_ip
@@ -188,14 +206,16 @@ def analyze_reports(reports):
     return jamming_events, 'UDP_%s' % udp_route_type, 'TCP_%s' % tcp_route_type
 
 
-def get_route_type(report_aa, report_ab, report_ba):
+def get_route_type(report_aa, report_ab, report_ac, report_ba, report_ca):
     ip_aa = get_router_ip_found_by_packet_drop_probe_report(report_aa)
     ip_ab = get_router_ip_found_by_packet_drop_probe_report(report_ab)
+    ip_ac = get_router_ip_found_by_packet_drop_probe_report(report_ac)
     ip_ba = get_router_ip_found_by_packet_drop_probe_report(report_ba)
-    if any([ip_aa is None, ip_ab is None, ip_ba is None]):
+    ip_ca = get_router_ip_found_by_packet_drop_probe_report(report_ca)
+    if any([ip_aa is None, ip_ab is None, ip_ac is None, ip_ba is None, ip_ca is None]):
         return 'ROUTE_UNKNOWN'
-    is_dport_dependent = ip_aa != ip_ab
-    is_sport_dependent = ip_aa != ip_ba
+    is_dport_dependent = len(set([ip_aa, ip_ab, ip_ac])) > 1
+    is_sport_dependent = len(set([ip_aa, ip_ba, ip_ca])) > 1
     if is_dport_dependent and is_sport_dependent:
         return 'ROUTE_BOTH_DEPENDENT'
     if is_dport_dependent:
