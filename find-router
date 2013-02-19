@@ -8,7 +8,8 @@ import shutil
 import subprocess
 from scapy.utils import wrpcap
 from mongol.probe import DnsWrongAnswerProbe
-from mongol.probe import TcpRstProbe
+from mongol.probe import HttpTcpRstProbe
+from mongol.probe import DnsTcpRstProbe
 from mongol.probe import TcpPacketDropProbe
 from mongol.probe import UdpPacketDropProbe
 from mongol import networking
@@ -47,6 +48,7 @@ def main(dst):
     with open(os.path.join(config.output_dir, 'open-routes.csv'), 'a') as f:
         csv_writer = csv.writer(f)
         for missing_jamming_method in (ALL_JAMMING_METHODS - found_jamming_methods):
+            print('found open route: %s %s' % (missing_jamming_method, dst))
             csv_writer.writerow([probed_at, missing_jamming_method, dst])
     packets_dir = get_packets_dir(probed_at)
     if found_jamming_methods:
@@ -95,15 +97,15 @@ def do_probing(probed_at, iface, src, dst, ttl, found_jamming_methods):
             dst, config.dns_wrong_answer_probe['dport'], ttl, sniffer)
     if 'HTTP_TCP_RST' not in found_jamming_methods and config.http_tcp_rst_probe:
         probe_config = config.http_tcp_rst_probe
-        probes['HTTP_TCP_RST'] = TcpRstProbe(
+        probes['HTTP_TCP_RST'] = HttpTcpRstProbe(
             src, probe_config['sport'],
-            dst, probe_config['dport'], ttl, sniffer, offending_payload_type='HTTP',
+            dst, probe_config['dport'], ttl, sniffer,
             interval_between_syn_and_offending_payload=probe_config['interval_between_syn_and_http_get'])
     if 'DNS_TCP_RST' not in found_jamming_methods and config.dns_tcp_rst_probe:
         probe_config = config.dns_tcp_rst_probe
-        probes['DNS_TCP_RST'] = TcpRstProbe(
+        probes['DNS_TCP_RST'] = DnsTcpRstProbe(
             src, probe_config['sport'],
-            dst, probe_config['dport'], ttl, sniffer, offending_payload_type='DNS',
+            dst, probe_config['dport'], ttl, sniffer,
             interval_between_syn_and_offending_payload=probe_config['interval_between_syn_and_dns_question'])
     if 'TCP_PACKET_DROP' not in found_jamming_methods and config.tcp_packet_drop_probe:
         probes['TCP_PACKET_DROP_BLOCKED'] = TcpPacketDropProbe(

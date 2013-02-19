@@ -7,7 +7,6 @@ import struct
 import atexit
 from scapy.layers.inet import IP, TCP, IPerror, TCPerror
 from scapy.layers.dns import DNS, DNSQR
-from scapy.packet import Raw
 
 MONGOL_SYS_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if MONGOL_SYS_PATH not in sys.path:
@@ -51,21 +50,25 @@ HTTP_DPORT = 80
 DNS_DPORT = 53
 ROOT_USER_ID = 0
 
-def main(dst, ttl, offending_payload_type='HTTP'):
+
+def main(dst, ttl, probe_type_code='HTTP'):
+    probe_types = {
+        'HTTP': HttpTcpRstProbe,
+        'DNS': DnsTcpRstProbe
+    }
+    probe_type = probe_types[probe_type_code]
     iface, src, _ = networking.get_route(dst)
-    dport = HTTP_DPORT if 'HTTP' == offending_payload_type else DNS_DPORT
+    dport = probe_type.get_default_dport()
     if ROOT_USER_ID == os.geteuid():
         sniffer = networking.create_sniffer(iface, src, dst)
-        probe = TcpRstProbe(src, SPORT, dst, dport, int(ttl), sniffer,
-            offending_payload_type=offending_payload_type)
+        probe = probe_type(src, SPORT, dst, dport, int(ttl), sniffer)
         sniffer.start_sniffing()
         probe.poke()
         time.sleep(2)
         sniffer.stop_sniffing()
         report = probe.peek()
     else:
-        probe = TcpRstProbe(src, SPORT, dst, dport, int(ttl), sniffer=None,
-            offending_payload_type=offending_payload_type)
+        probe = probe_type(src, SPORT, dst, dport, int(ttl), sniffer=None)
         probe.poke()
         time.sleep(2)
         report = probe.peek()
@@ -77,7 +80,7 @@ def main(dst, ttl, offending_payload_type='HTTP'):
 
 
 class TcpRstProbe(object):
-    def __init__(self, src, sport, dst, dport, ttl, sniffer, offending_payload_type,
+    def __init__(self, src, sport, dst, dport, ttl, sniffer,
                  interval_between_syn_and_offending_payload=0.5):
         self.src = src
         self.sport = sport
@@ -85,7 +88,6 @@ class TcpRstProbe(object):
         self.dport = dport
         self.ttl = ttl
         self.sniffer = sniffer
-        self.offending_payload_type = offending_payload_type
         self.interval_between_syn_and_offending_payload = interval_between_syn_and_offending_payload
         self.report = {
             'ROUTER_IP_FOUND_BY_SYN': None,
@@ -121,26 +123,23 @@ class TcpRstProbe(object):
         networking.immediately_close_tcp_socket_so_sport_can_be_reused(self.tcp_socket)
 
     def send_offending_payload(self):
-        if 'DNS' == self.offending_payload_type:
-            offending_payload = str(DNS(rd=1, qd=DNSQR(qname="dl.dropbox.com")))
-            offending_payload = struct.pack("!H", len(offending_payload)) + offending_payload
-        else:
-            assert 'HTTP' == self.offending_payload_type
-            offending_payload = 'GET / HTTP/1.1\r\nHost: www.facebook.com\r\n\r\n'
         if self.sniffer:
             packet = IP(src=self.src, dst=self.dst, id=self.ttl * 10 + 2, ttl=self.ttl) / TCP(sport=self.sport,
-                dport=self.dport, flags='A', seq=1, ack=100) / Raw(offending_payload)
+                dport=self.dport, flags='A', seq=1, ack=100) / self.get_offending_payload()
             networking.send(packet)
             self.report['PACKETS'].append(('OFFENDING_PAYLOAD', packet))
         else:
             self.tcp_socket.setsockopt(socket.SOL_IP, socket.IP_TTL, self.ttl)
             try:
-                self.tcp_socket.send(offending_payload)
+                self.tcp_socket.send(self.get_offending_payload())
             except socket.error as e:
                 if ERROR_CONNECTION_RESET == e[0]:
                     self.report['RST_AFTER_SYN?'] = True
                 else:
                     raise
+
+    def get_offending_payload(self):
+        raise NotImplementedError()
 
     def peek(self):
         if self.sniffer:
@@ -223,6 +222,26 @@ class TcpRstProbe(object):
         else:
             self.report['PACKETS'].append(('ROUTER_IP_FOUND_BY_OFFENDING_PAYLOAD', packet))
             self.report['ROUTER_IP_FOUND_BY_OFFENDING_PAYLOAD'] = router_ip
+
+
+class HttpTcpRstProbe(TcpRstProbe):
+    def get_offending_payload(self):
+        return 'GET / HTTP/1.1\r\nHost: www.facebook.com\r\n\r\n'
+
+    @classmethod
+    def get_default_dport(cls):
+        return 80
+
+
+class DnsTcpRstProbe(TcpRstProbe):
+    def get_offending_payload(self):
+        offending_payload = str(DNS(rd=1, qd=DNSQR(qname="dl.dropbox.com")))
+        return struct.pack("!H", len(offending_payload)) + offending_payload
+
+    @classmethod
+    def get_default_dport(cls):
+        return 53
+
 
 if '__main__' == __name__:
     if 1 == len(sys.argv):
