@@ -10,6 +10,9 @@ from scapy.utils import wrpcap
 from mongol.probe import DnsWrongAnswerProbe
 from mongol.probe import HttpTcpRstProbe
 from mongol.probe import DnsTcpRstProbe
+from mongol.probe import SmtpMailFromTcpRstProbe
+from mongol.probe import SmtpRcptToTcpRstProbe
+from mongol.probe import SmtpHeloRcptToTcpRstProbe
 from mongol.probe import TcpPacketDropProbe
 from mongol.probe import UdpPacketDropProbe
 from mongol import networking
@@ -22,6 +25,12 @@ if config.http_tcp_rst_probe:
     ALL_JAMMING_METHODS.add('HTTP_TCP_RST')
 if config.dns_tcp_rst_probe:
     ALL_JAMMING_METHODS.add('DNS_TCP_RST')
+if config.smtp_mail_from_tcp_rst_probe:
+    ALL_JAMMING_METHODS.add('SMTP_MAIL_FROM_TCP_RST')
+if config.smtp_rcpt_to_tcp_rst_probe:
+    ALL_JAMMING_METHODS.add('SMTP_RCPT_TO_TCP_RST')
+if config.smtp_helo_rcpt_to_tcp_rst_probe:
+    ALL_JAMMING_METHODS.add('SMTP_HELO_RCPT_TO_TCP_RST')
 if config.tcp_packet_drop_probe:
     ALL_JAMMING_METHODS.add('TCP_PACKET_DROP')
 if config.udp_packet_drop_probe:
@@ -128,6 +137,24 @@ def do_probing(probed_at, iface, src, dst, ttl, found_jamming_methods):
             src, probe_config['sport'],
             dst, probe_config['dport'], ttl, sniffer,
             interval_between_syn_and_offending_payload=probe_config['interval_between_syn_and_dns_question'])
+    if 'SMTP_MAIL_FROM_TCP_RST' not in found_jamming_methods and config.smtp_mail_from_tcp_rst_probe:
+        probe_config = config.smtp_mail_from_tcp_rst_probe
+        probes['SMTP_MAIL_FROM_TCP_RST'] = SmtpMailFromTcpRstProbe(
+            src, probe_config['sport'],
+            dst, probe_config['dport'], ttl, sniffer,
+            interval_between_syn_and_offending_payload=probe_config['interval_between_syn_and_mail_from'])
+    if 'SMTP_RCPT_TO_TCP_RST' not in found_jamming_methods and config.smtp_mail_from_tcp_rst_probe:
+        probe_config = config.smtp_rcpt_to_tcp_rst_probe
+        probes['SMTP_RCPT_TO_TCP_RST'] = SmtpRcptToTcpRstProbe(
+            src, probe_config['sport'],
+            dst, probe_config['dport'], ttl, sniffer,
+            interval_between_syn_and_offending_payload=probe_config['interval_between_syn_and_rcpt_to'])
+    if 'SMTP_HELO_RCPT_TO_TCP_RST' not in found_jamming_methods and config.smtp_mail_from_tcp_rst_probe:
+        probe_config = config.smtp_helo_rcpt_to_tcp_rst_probe
+        probes['SMTP_HELO_RCPT_TO_TCP_RST'] = SmtpHeloRcptToTcpRstProbe(
+            src, probe_config['sport'],
+            dst, probe_config['dport'], ttl, sniffer,
+            interval_between_syn_and_offending_payload=probe_config['interval_between_syn_and_helo'])
     if 'TCP_PACKET_DROP' not in found_jamming_methods and config.tcp_packet_drop_probe:
         probes['TCP_PACKET_DROP_BLOCKED'] = TcpPacketDropProbe(
             src, config.tcp_packet_drop_probe['blocked_sport'],
@@ -200,6 +227,9 @@ def analyze_reports(reports):
     results['DNS_WRONG_ANSWER'] = analyze_dns_wrong_answer_probe_report(reports.get('DNS_WRONG_ANSWER'))
     results['HTTP_TCP_RST'] = analyze_tcp_rst_probe_report(reports.get('HTTP_TCP_RST'))
     results['DNS_TCP_RST'] = analyze_tcp_rst_probe_report(reports.get('DNS_TCP_RST'))
+    results['SMTP_MAIL_FROM_TCP_RST'] = analyze_tcp_rst_probe_report(reports.get('SMTP_MAIL_FROM_TCP_RST'))
+    results['SMTP_RCPT_TO_TCP_RST'] = analyze_tcp_rst_probe_report(reports.get('SMTP_RCPT_TO_TCP_RST'))
+    results['SMTP_HELO_RCPT_TO_TCP_RST'] = analyze_tcp_rst_probe_report(reports.get('SMTP_HELO_RCPT_TO_TCP_RST'))
     results['TCP_PACKET_DROP'] = analyze_packet_drop_probe_report(
         reports.get('TCP_PACKET_DROP_BLOCKED'), reports.get('TCP_PACKET_DROP_COMPARISON'), tcp_route_type)
     results['UDP_PACKET_DROP'] = analyze_packet_drop_probe_report(

@@ -43,6 +43,21 @@ dns_tcp_rst_probe = {
     'dport': 53,
     'interval_between_syn_and_dns_question': 0.5
 }
+smtp_mail_from_tcp_rst_probe = {
+    'sport': 19844,
+    'dport': 25,
+    'interval_between_syn_and_mail_from': 0.5
+}
+smtp_rcpt_to_tcp_rst_probe = {
+    'sport': 19845,
+    'dport': 25,
+    'interval_between_syn_and_rcpt_to': 0.5
+}
+smtp_helo_rcpt_to_tcp_rst_probe = {
+    'sport': 19846,
+    'dport': 25,
+    'interval_between_syn_and_helo': 0.5
+}
 tcp_packet_drop_probe = None
 # uncomment below if you have tcp port being blocked by GFW
 # if dport is blocked, set the sport to the same

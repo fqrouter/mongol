@@ -186,7 +186,7 @@ class TcpRstProbe(object):
             else:
                 self.record_rst_after_offending_payload(packet)
         else:
-            self.report['PACKETS'].append((self.handle_unknown_packet('UNKNOWN'), packet))
+            self.report['PACKETS'].append((self.handle_unknown_packet(packet), packet))
 
     def analyze_tcp_error_packet(self, packet):
         if self.sport != packet[TCPerror].sport:
@@ -198,7 +198,7 @@ class TcpRstProbe(object):
         elif self.ttl * 10 + 2 == packet[IPerror].id:
             self.record_router_ip_found_by_offending_payload(packet.src, packet)
         else:
-            self.report['PACKETS'].append((self.handle_unknown_packet('UNKNOWN'), packet))
+            self.report['PACKETS'].append((self.handle_unknown_packet(packet), packet))
 
     def handle_unknown_packet(self, packet):
         return 'UNKNOWN'
